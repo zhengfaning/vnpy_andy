@@ -94,23 +94,6 @@ vnctptd = Extension(
     depends=[],
     language="cpp",
 )
-vnoes = Extension(
-    name="vnpy.api.oes.vnoes",
-    sources=gather_autocxxpy_generated_files(
-        "vnpy/api/oes/vnoes/generated_files/",
-    ),
-    include_dirs=["vnpy/api/oes/vnoes/include",
-                  "vnpy/api/oes/vnoes/include/oes", ],
-    define_macros=[("BRIGAND_NO_BOOST_SUPPORT", "1")],
-    undef_macros=[],
-    library_dirs=["vnpy/api/oes/vnoes/libs"],
-    libraries=["oes_api"],
-    extra_compile_args=compiler_flags,
-    extra_link_args=extra_link_args,
-    runtime_library_dirs=runtime_library_dirs,
-    depends=[],
-    language="cpp",
-)
 
 if platform.system() == "Windows":
     # use pre-built pyd for windows ( support python 3.7 only )
@@ -118,7 +101,7 @@ if platform.system() == "Windows":
 elif platform.system() == "Darwin":
     ext_modules = []
 else:
-    ext_modules = [vnctptd, vnctpmd, vnoes]
+    ext_modules = [vnctptd, vnctpmd]
 
 
 def check_extension_build_flag(key: str, module: Extension):
@@ -131,10 +114,6 @@ def check_extension_build_flag(key: str, module: Extension):
             ext_modules = list(set(ext_modules) - {module})
         else:
             raise ValueError(f"Flag {key} should be '0' or '1', but {repr(value)} got.")
-
-
-check_extension_build_flag("VNPY_BUILD_OES", vnoes)
-
 
 pkgs = find_packages()
 
