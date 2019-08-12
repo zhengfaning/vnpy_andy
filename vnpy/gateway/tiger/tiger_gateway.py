@@ -10,7 +10,7 @@ from multiprocessing.dummy import Pool
 from queue import Empty, Queue
 import functools
 import traceback
-
+import time
 import pandas as pd
 from pandas import DataFrame
 
@@ -149,9 +149,12 @@ class TigerGateway(BaseGateway):
 
         # Put connect task into quque.
         self.init_client_config()
-        self.add_task(self.connect_quote)
-        self.add_task(self.connect_trade)
-        self.add_task(self.connect_push)
+        self.connect_quote()
+        self.connect_trade()
+        self.connect_push()
+        # self.add_task(self.connect_quote)
+        # self.add_task(self.connect_trade)
+        # self.add_task(self.connect_push)
 
     def init_client_config(self, sandbox=False):
         """"""
@@ -167,6 +170,7 @@ class TigerGateway(BaseGateway):
         """
         try:
             self.quote_client = QuoteClient(self.client_config)
+            self.write_log("start get_symbol_names")
             self.symbol_names = dict(
                 self.quote_client.get_symbol_names(lang=Language.zh_CN))
             self.query_contract()
@@ -183,9 +187,12 @@ class TigerGateway(BaseGateway):
         """
         self.trade_client = TradeClient(self.client_config)
         try:
-            self.add_task(self.query_order)
-            self.add_task(self.query_position)
-            self.add_task(self.query_account)
+            self.query_order()
+            self.query_position()
+            self.query_account()
+            # self.add_task(self.query_order)
+            # self.add_task(self.query_position)
+            # self.add_task(self.query_account)
         except ApiException:
             self.write_log("交易接口连接失败")
             return
@@ -382,39 +389,43 @@ class TigerGateway(BaseGateway):
     def query_contract(self):
         """"""
         # HK Stock
+        
+        # symbols_names_HK = self.quote_client.get_symbol_names(
+        #     lang=Language.zh_CN, market=Market.HK)
+        # contract_names_HK = DataFrame(
+        #     symbols_names_HK, columns=["symbol", "name"])
 
-        symbols_names_HK = self.quote_client.get_symbol_names(
-            lang=Language.zh_CN, market=Market.HK)
-        contract_names_HK = DataFrame(
-            symbols_names_HK, columns=["symbol", "name"])
+        # contractList = list(contract_names_HK["symbol"])
+        # i, n = 0, len(contractList)
+        # result = pd.DataFrame()
+        # count = 1
+        # while i < n:
+        #     count += 1
+        #     i += 50
+        #     c = contractList[i - 50:i]
+        #     r = self.quote_client.get_trade_metas(c)
+        #     result = result.append(r)
+        #     if count % 10 == 0:
+        #         time.sleep(5)
 
-        contractList = list(contract_names_HK["symbol"])
-        i, n = 0, len(contractList)
-        result = pd.DataFrame()
-        while i < n:
-            i += 50
-            c = contractList[i - 50:i]
-            r = self.quote_client.get_trade_metas(c)
-            result = result.append(r)
+        # contract_detail_HK = result.sort_values(by="symbol", ascending=True)
+        # contract_HK = pd.merge(
+        #     contract_names_HK, contract_detail_HK, how="left", on="symbol")
 
-        contract_detail_HK = result.sort_values(by="symbol", ascending=True)
-        contract_HK = pd.merge(
-            contract_names_HK, contract_detail_HK, how="left", on="symbol")
-
-        for ix, row in contract_HK.iterrows():
-            contract = ContractData(
-                symbol=row["symbol"],
-                exchange=Exchange.SEHK,
-                name=row["name"],
-                product=Product.EQUITY,
-                size=1,
-                min_volume=row["lot_size"],
-                pricetick=row["min_tick"],
-                net_position=True,
-                gateway_name=self.gateway_name,
-            )
-            self.on_contract(contract)
-            self.contracts[contract.vt_symbol] = contract
+        # for ix, row in contract_HK.iterrows():
+        #     contract = ContractData(
+        #         symbol=row["symbol"],
+        #         exchange=Exchange.SEHK,
+        #         name=row["name"],
+        #         product=Product.EQUITY,
+        #         size=1,
+        #         min_volume=row["lot_size"],
+        #         pricetick=row["min_tick"],
+        #         net_position=True,
+        #         gateway_name=self.gateway_name,
+        #     )
+        #     self.on_contract(contract)
+        #     self.contracts[contract.vt_symbol] = contract
 
         # US Stock
         symbols_names_US = self.quote_client.get_symbol_names(
@@ -436,26 +447,26 @@ class TigerGateway(BaseGateway):
             self.contracts[contract.vt_symbol] = contract
 
         # CN Stock
-        symbols_names_CN = self.quote_client.get_symbol_names(
-            lang=Language.zh_CN, market=Market.CN)
-        contract_CN = DataFrame(symbols_names_CN, columns=["symbol", "name"])
+        # symbols_names_CN = self.quote_client.get_symbol_names(
+        #     lang=Language.zh_CN, market=Market.CN)
+        # contract_CN = DataFrame(symbols_names_CN, columns=["symbol", "name"])
 
-        for ix, row in contract_CN.iterrows():
-            symbol = row["symbol"]
-            symbol, exchange = convert_symbol_tiger2vt(symbol)
+        # for ix, row in contract_CN.iterrows():
+        #     symbol = row["symbol"]
+        #     symbol, exchange = convert_symbol_tiger2vt(symbol)
 
-            contract = ContractData(
-                symbol=symbol,
-                exchange=exchange,
-                name=row["name"],
-                product=Product.EQUITY,
-                size=1,
-                min_volume=100,
-                pricetick=0.001,
-                gateway_name=self.gateway_name,
-            )
-            self.on_contract(contract)
-            self.contracts[contract.vt_symbol] = contract
+        #     contract = ContractData(
+        #         symbol=symbol,
+        #         exchange=exchange,
+        #         name=row["name"],
+        #         product=Product.EQUITY,
+        #         size=1,
+        #         min_volume=100,
+        #         pricetick=0.001,
+        #         gateway_name=self.gateway_name,
+        #     )
+        #     self.on_contract(contract)
+        #     self.contracts[contract.vt_symbol] = contract
 
     def query_account(self):
         """"""

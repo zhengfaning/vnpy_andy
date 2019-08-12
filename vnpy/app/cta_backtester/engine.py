@@ -343,7 +343,7 @@ class BacktesterEngine(BaseEngine):
         req = HistoryRequest(
             symbol=symbol,
             exchange=exchange,
-            interval=Interval(interval),
+            interval=interval,
             start=start,
             end=end
         )

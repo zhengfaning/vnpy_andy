@@ -10,8 +10,8 @@ import script_handler
 app = Flask(__name__)
 
 @app.route('/')
-def hello_world():
-    return 'Hello, World!'
+def root():
+    return 'vnpy 测试'
 
 @app.route('/oplist')
 def oplist():
@@ -54,15 +54,17 @@ def reload():
     reloader.reload(script_handler)
     return "重载方法"
 
-@app.route('/init')
-def init():
-    vnapp = vnpy_app.App.instance()
-    vnapp.start()
-    return "初始化vnpy系统完成"
+# @app.route('/init')
+# def init():
+#     vnapp = vnpy_app.App.instance()
+#     vnapp.start()
+#     return "初始化vnpy系统完成"
 
 
 if __name__ == "__main__":
     # vnapp = vnpy_app.App.instance()
     # vnapp.run()
+    vnapp = vnpy_app.App.instance()
+    vnapp.start()
     app.run()
     print("ok")

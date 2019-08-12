@@ -285,6 +285,72 @@ class ArrayManager(object):
         self.close_array = np.zeros(size)
         self.volume_array = np.zeros(size)
 
+        
+    # def maxmin(data,fastk_period):
+    #     close_prices = np.nan_to_num(np.array([v['close'] for v in data]))
+    #     max_prices = np.nan_to_num(np.array([v['high'] for v in data]))
+    #     min_prices = np.nan_to_num(np.array([v['low'] for v in data]))
+        
+    #     max_close = talib.MAX(self.high_array, timeperiod=fastk_period)
+    #     min_close = talib.MIN(self.low_array, timeperiod=fastk_period)
+        
+    #     for k in range(len(min_prices)):
+    #         if k<fastk_period and k>1:
+    #             aaa = talib.MIN(min_prices,timeperiod=k)
+    #             bbb = talib.MAX(max_prices,timeperiod=k)
+    #             min_close[k]= aaa[k]
+    #             max_close[k]= bbb[k]
+    #         elif k==1 or k==0:
+    #             min_close[k]=min_prices[k]
+    #             max_close[k]=max_prices[k]
+            
+    #     indicators= {
+    #         'close': close_prices,
+    #         'max': max_close,
+    #         'min': min_close
+    #     }
+    #     return indicators
+
+    def kdj(self, fastk_period=9, slowk_period=3, slowd_period=3):
+        #计算kd指标
+        # high_prices = np.array([v['high'] for v in data])
+        # low_prices = np.array([v['low'] for v in data])
+        # close_prices = np.array([v['close'] for v in data])
+
+        max_close = talib.MAX(self.high_array, timeperiod=fastk_period)
+        min_close = talib.MIN(self.low_array, timeperiod=fastk_period)
+        
+        for k in range(len(self.low_array)):
+            if k<fastk_period and k>1:
+                aaa = talib.MIN(self.low_array,timeperiod=k)
+                bbb = talib.MAX(self.high_array,timeperiod=k)
+                min_close[k]= aaa[k]
+                max_close[k]= bbb[k]
+            elif k==1 or k==0:
+                min_close[k]=self.low_array[k]
+                max_close[k]=self.high_array[k]
+        # rsv = maxmin(data, fastk_period)
+        fast_k = (self.close_array - min_close)/(max_close - min_close)*100
+        ppp = max_close - min_close
+        for t in range(len(self.close_array)):
+            if max_close[t] == min_close[t]:
+                fast_k[t] = 0
+        slow_k1 = np.full_like(self.close_array,50)
+        slow_d1 = np.full_like(self.close_array,50)
+        for k in range(1,len(fast_k)):
+            slow_k1[k] = slow_k1[k-1]*2/3+fast_k[k]/3
+            slow_d1[k] = slow_d1[k-1]*2/3+slow_k1[k]/3
+        
+        indicators= {
+            'rsv':fast_k,
+            'max':max_close,
+            'min':min_close,
+            'k': slow_k1,
+            'd': slow_d1,
+            'j': 3 * slow_k1 - 2 * slow_d1
+        }
+        return indicators
+
     def update_bar(self, bar):
         """
         Update new bar data into array manager.

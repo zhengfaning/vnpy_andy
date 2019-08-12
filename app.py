@@ -12,6 +12,8 @@ from vnpy.app.cta_strategy import CtaStrategyApp
 from vnpy.app.cta_strategy.base import EVENT_CTA_LOG
 # from vnpy.app.script_trader import init_cli_trading
 from vnpy.app.script_trader import ScriptEngine
+from vnpy.app.cta_backtester import CtaBacktesterApp
+
 
 SETTINGS["log.active"] = True
 SETTINGS["log.level"] = INFO
@@ -67,7 +69,8 @@ class App(object):
             self.main_engine.add_engine(ScriptEngine)
             self.script_engine = self.main_engine.get_engine("ScriptTrader")
             self.main_engine.write_log("Script")
-
+            backtester_engine = self.main_engine.add_app(CtaBacktesterApp)
+            
             sleep(10)
 
             cta_engine.init_engine()
@@ -79,6 +82,9 @@ class App(object):
 
             cta_engine.start_all_strategies()
             self.main_engine.write_log("CTA策略全部启动")
+            backtester_engine.init_engine()
+            self.main_engine.write_log(backtester_engine.get_strategy_class_names())
+
         else:
             print("App已进行过初始化")
         self.is_start = True

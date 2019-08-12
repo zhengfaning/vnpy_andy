@@ -19,8 +19,8 @@ def get_contract(args):
     data = engine.get_contract(symbol)
     d = {}
     d.update(data.__dict__)
-    d["exchange"] = d["exchange"].value
-    d["product"] = d["product"].value
+    # d["exchange"] = d["exchange"].value
+    # d["product"] = d["product"].value
     print(d)
 
     return str(d).encode("UTF-8")
@@ -31,10 +31,6 @@ def get_bars(args):
     engine = args["engine"]
     symbol = args["symbol"]
     data = engine.get_bars(vt_symbol=symbol, start_date="20190718", interval=Interval.DAILY)
-    d = {}
-    d.update(data.__dict__)
-    d["exchange"] = d["exchange"].value
-    d["product"] = d["product"].value
-    print(d)
+    return str(data)
 
-    return str(d).encode("UTF-8")
+    
