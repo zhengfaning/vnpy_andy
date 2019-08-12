@@ -7,11 +7,21 @@ import reloader
 reloader.enable()
 import handler
 import script_handler
+import pandas as pd
+import matplotlib.pyplot as plt, mpld3
 app = Flask(__name__)
 
 @app.route('/')
 def root():
-    return 'vnpy 测试'
+    plt.plot([3,1,4,1,5], 'ks-', mec='w', mew=5, ms=20)
+    df = pd.DataFrame({'birth':[2000,2000,2000,2001,2001,2001,2002,2002,2002],\
+    'name':['a','a','a','b','b','b','c' ,'c','c'],'code':[1,1,1,2,2,2,3,3,3],\
+    'habit':['drink','smoke','drink','eat','smoke','drink','eat','smoke','drink',],\
+    'value':['little','a few','some','some','little','a few','little','a few','some']})
+    df_h = df.to_html()
+    print(df_h)
+    h = handler.fig_html()
+    return h
 
 @app.route('/oplist')
 def oplist():
@@ -54,17 +64,17 @@ def reload():
     reloader.reload(script_handler)
     return "重载方法"
 
-# @app.route('/init')
-# def init():
-#     vnapp = vnpy_app.App.instance()
-#     vnapp.start()
-#     return "初始化vnpy系统完成"
+@app.route('/init')
+def init():
+    vnapp = vnpy_app.App.instance()
+    vnapp.start()
+    return "初始化vnpy系统完成"
 
 
 if __name__ == "__main__":
     # vnapp = vnpy_app.App.instance()
     # vnapp.run()
-    vnapp = vnpy_app.App.instance()
-    vnapp.start()
+    # vnapp = vnpy_app.App.instance()
+    # vnapp.start()
     app.run()
     print("ok")
