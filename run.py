@@ -8,7 +8,7 @@ reloader.enable()
 import handler
 import script_handler
 import pandas as pd
-import matplotlib.pyplot as plt, mpld3
+import matplotlib.pyplot as plt
 app = Flask(__name__)
 
 @app.route('/')

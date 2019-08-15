@@ -10,6 +10,10 @@ from vnpy.trader.constant import Exchange, Interval
 from kdj import calc_kdj
 import pandas as pd
 import matplotlib.pyplot as plt
+import draw_test
+import func_test3
+import numpy as np 
+import talib
 # from vnpy.trader.utility import ArrayManager, BarGenerator
 from vnpy.app.cta_strategy import (
     TickData,
@@ -29,44 +33,49 @@ class TestBar(object):
 
 
 if __name__ == "__main__":
+    rd = pd.date_range(start='2019-1-09', end='2019-1-10',periods=10)
+    print(rd)
+    print(pd.to_datetime(rd))
     req = HistoryRequest(
-        symbol="goog",
         exchange=Exchange.SMART,
+        symbol="goog",
         interval=Interval.MINUTE,
         start=datetime.datetime(2019,8,9,9),
         end=datetime.datetime(2019,8,10,4)
     )
     df_data = rq.rqdata_client.get_data("goog", begin="2019-08-09 09:00:00", end="2019-08-10 04:00:00")
-    df = df_data[-200:]
-    bar_data = rq.rqdata_client.query_history(req)
-
-    tb = TestBar()
-    for v in bar_data:
-        tb.am.update_bar(v)
-
-    data = df
-    print(data["close"])
-    print(tb.am.close_array)
-    # data = df.to_dict('records')
-    xxx = tb.am.kdj()
-
-
-    bbb=calc_kdj(data)
-    df['rsv']=bbb['rsv']
-    df['max']=bbb['max']
-    df['min']=bbb['min']
-    df['k']=bbb['k']
-    df['d']=bbb['d']
-    df['j']=bbb['j']
-
-
-    print(df)
-
-    dm=df[['k','d','j']]
-    dm2=pd.DataFrame(xxx)
-    print(dm)
-    print(dm2)
-    dm2.plot(figsize=(20,10))
+    df = df_data[-100:]
+    # df = df_data
+    fig  = plt.figure()
+    ax = fig.add_subplot(1,1,1)
+    date = []
+    for v in df.time.values:
+        d = datetime.datetime.fromtimestamp(v / 1000)
+        date.append(d)
+    # dt = pd.DatetimeIndex(date)
+    dt = date
+    close = df.close.values
+    ax.plot(dt,close)
+    # print(df.close.values)
+    sma5 = talib.SMA(close, timeperiod = 5) 
+    ax.plot(dt,sma5)
+    sma10 = talib.SMA(close, timeperiod = 10) 
+    ax.plot(dt,sma10)
+    v_list, p_list = func_test3.calc(close)
+    for i in range(len(p_list)):
+        p = p_list[i]
+        ax.plot([dt[p]], [close[p]], 'o')
+        ax.annotate(close[p], xy=(dt[p], close[p]))
+    print(df.close.values)
     plt.show()
-    print("bye bye")
+    # print(df.close)
+    # for item in df.close:
+    #     print(item)
+    # draw_test.plot_candle_stick("google", df, True)
+    # bar_data = rq.rqdata_client.query_history(req)
+
+    # tb = TestBar()
+    # for v in bar_data:
+    #     tb.am.update_bar(v)
+
 

@@ -4,7 +4,7 @@ from vnpy.trader.engine import MainEngine
 from vnpy.app.cta_backtester.engine import BacktesterEngine
 from vnpy.trader.constant import Exchange, Interval
 import time, datetime
-import matplotlib.pyplot as plt, mpld3
+import matplotlib.pyplot as plt
 from io import BytesIO
 import base64
 

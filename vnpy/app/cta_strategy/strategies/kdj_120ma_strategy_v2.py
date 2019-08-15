@@ -17,7 +17,7 @@ from vnpy.app.cta_strategy import (
 以及更新,当方向改变或者kdj相反时平仓
 """
 
-class Kdj120MaStrategy(CtaTemplate):
+class Kdj120MaStrategyV2(CtaTemplate):
     author = "用Python的交易员"
 
     # fast_window = 10
@@ -34,7 +34,7 @@ class Kdj120MaStrategy(CtaTemplate):
 
     def __init__(self, cta_engine, strategy_name, vt_symbol, setting):
         """"""
-        super(Kdj120MaStrategy, self).__init__(
+        super(Kdj120MaStrategyV2, self).__init__(
             cta_engine, strategy_name, vt_symbol, setting
         )
 
