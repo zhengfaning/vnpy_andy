@@ -21,16 +21,20 @@ class Kdj120MaStrategy(CtaTemplate):
     author = "用Python的交易员"
 
     # fast_window = 10
-    ma_window = 120
-    interval = 15
-    start_kdj = None
-    start_ma = None
-    last_ma = None
-    bull_market = None
+    ma_window = 60
+    wave_window = 0.0005
+    bar_min = 5
+    interval = 0
+    # start_kdj = None
+    # start_ma = None
+    # last_ma = None
+    bull = None
+    base_wave = None
+    price = 0
+    calc = 0
 
-
-    parameters = ["ma_window"]
-    variables = ["start_kdj", "start_ma", "last_ma", "slow_ma1"]
+    parameters = ["ma_window", "wave_window", "bar_min"]
+    variables = ["bull", "base_wave"]
 
     def __init__(self, cta_engine, strategy_name, vt_symbol, setting):
         """"""
@@ -38,7 +42,7 @@ class Kdj120MaStrategy(CtaTemplate):
             cta_engine, strategy_name, vt_symbol, setting
         )
 
-        self.bg = BarGenerator(self.on_bar, 15, self.on_5min_bar)
+        self.bg = BarGenerator(self.on_bar, self.bar_min, self.on_x_min_bar)
         self.am = ArrayManager(200)
 
     def on_init(self):
@@ -73,7 +77,7 @@ class Kdj120MaStrategy(CtaTemplate):
         self.bg.update_bar(bar)
 
 
-    def on_5min_bar(self, bar: BarData):
+    def on_x_min_bar(self, bar: BarData):
         """
         Callback of new bar data update.
         """
@@ -82,31 +86,107 @@ class Kdj120MaStrategy(CtaTemplate):
         am.update_bar(bar)
         if not am.inited:
             return
-
-        ma_window = am.sma(self.ma_window, array=True)
+        
         # 现在的价格
         now = bar.close_price
+
+        w,_ = self.am.wave()
+        
+        w = w[::-1]
+        # 持仓的情况下,检查是否低于或者高于第1波浪,根据情况进行平仓
+        # if self.pos != 0:
+        #     print("持仓收盘价", bar.close_price)
+            
+                
+        if self.pos > 0 and now < self.base_wave:
+            new_wave = bar.close_price - self.interval
+            if now > self.base_wave:
+                self.cover(bar.close_price, 1)
+                self.pos = 0
+                print("平多仓", bar.close_price)
+            elif self.base_wave < new_wave:
+                if abs(self.base_wave - new_wave) > self.interval:
+                    self.base_wave = new_wave
+            # self.cover(bar.close_price, 1)
+            # print("平仓", bar.close_price)
+            self.pos = 0
+        elif self.pos < 0:
+            new_wave = bar.close_price + self.interval
+            if now > self.base_wave:
+                self.cover(bar.close_price, 1)
+                self.pos = 0
+                self.calc += -(bar.close_price - self.price)
+                print("平卖空仓", bar.close_price)
+            elif self.base_wave > new_wave:
+                if (self.base_wave - new_wave) > self.interval:
+                    self.base_wave = new_wave
+                    # print("更新wave, 新wave=", new_wave)
+            
+
+        ma_window = am.sma(self.ma_window, array=True)
+        
         # 现在的均线
         ma_price = ma_window[-1]
 
-        # 计算突破均线
-        if self.bull_market is None:
-            self.bull_market = 1 if now > ma_price else 0
-        else:
-            if self.bull_market == 0:
-                if self.pos == 0:
-                    self.buy(bar.close_price, 1)
-                elif self.pos < 0:
-                    self.cover(bar.close_price, 1)
-                    self.buy(bar.close_price, 1)
-            else:                    
-                if self.pos == 0:
-                    self.short(bar.close_price, 1)
-                elif self.pos > 0:
-                    self.sell(bar.close_price, 1)
-                    self.short(bar.close_price, 1)
+        # 计算均线,并保存
+        self.bull = 1 if now > ma_price else 0
         
+        kdj = self.am.kdj(5,3,3)
 
+        k = kdj["k"][-1]
+        d = kdj["d"][-1]
+        j = kdj["j"][-1]
+        # 均线之上,配合金叉进行
+        if self.bull == 1:
+            # 金叉出现,且j值大于100时
+            if k < 50 and k > d and j >= 100:
+                if now  > w[0] and \
+                   w[0] < w[1] and \
+                   w[0] > w[2] and \
+                   w[1] > w[2]:
+                   
+                    if self.pos == 0:
+                        self.interval = abs((w[0] - w[2]) * 0.7)
+                        self.buy(bar.close_price, 1)
+                        self.pos += 1
+                        self.base_wave = w[0]
+                        self.price = bar.close_price
+                        print("进行买多,price=",bar.close_price)
+                    elif self.pos < 0:
+                        self.interval = abs((w[0] - w[2]) * 0.7)
+                        self.pos += 1
+                        self.cover(bar.close_price, 1)
+                        self.buy(bar.close_price, 1)
+                        self.base_wave = w[0]
+                        self.price = bar.close_price
+                        print("平仓后买多", bar.close_price)
+                        
+                    
+        # 均线之下
+        else:
+            # 死叉出现,且j值小于10时
+            if k <= 50 and k < d and j <= 10:
+                if now  < w[0] and \
+                   w[0] > w[1] and \
+                   w[0] < w[2] and \
+                   w[1] < w[2]:
+                    if self.pos == 0:
+                        self.interval = abs((w[0] - w[2]) * 0.7)
+                        self.short(bar.close_price, 1)
+                        self.pos -= 1
+                        self.base_wave = w[0]
+                        self.price = bar.close_price
+                        print("进行卖空,price=",bar.close_price)
+                    elif self.pos > 0:
+                        self.interval = abs((w[0] - w[2]) * 0.7)
+                        self.sell(bar.close_price, 1)
+                        self.short(bar.close_price, 1)
+                        self.pos -= 1
+                        self.base_wave = w[0]
+                        self.price = bar.close_price
+                        print("平仓后卖空", bar.close_price)
+                    
+                        
         self.put_event()
 
     def on_order(self, order: OrderData):

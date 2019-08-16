@@ -11,7 +11,122 @@ array_y = np.array([5,6,7,8,9,10])
 xx = [1,5,6,7,6,8]
 
 
-def calc(array):
+def calc(data, window = 0.0003):
+    v_list = []
+    p_list = []
+    if len(data) <= 0:
+        return 
+    # r = array[::-1]
+    r = data
+    l = len(data) - 1
+    now = r[0]
+    v_list.append(now)
+    p_list.append(0)
+    pos = 1
+    start_pos = 0
+    vol = 0
+    u_tag = None
+    d_tag = None
+    end_tag = None
+    while pos < l:
+
+        if now < r[pos]:
+            u_tag = pos
+            # if abs(d_vol/r[start_pos]) > window:
+            if d_tag:
+                diff = r[start_pos] - r[d_tag]
+                if abs(diff / r[start_pos]) > window:
+                    end_tag = d_tag
+                    
+        elif now > r[pos]:
+            d_tag = pos
+            # if abs(u_vol/r[start_pos]) > window:
+            if u_tag:
+                diff = r[start_pos] - r[u_tag]
+                if abs(diff / r[start_pos]) > window:
+                    end_tag = u_tag
+
+        if not end_tag is None:
+            print("point = {},start = {}, end = {}, vol = {:.2%}".format(
+            r[end_tag],start_pos, end_tag, vol/r[start_pos]))
+            start_pos = end_tag
+            v_list.append(r[end_tag])
+            p_list.append(end_tag)
+            end_tag = None
+
+        vol += r[pos] - now
+        now = r[pos]
+        pos += 1
+
+    print(v_list)
+    print(p_list)
+
+    return v_list, p_list
+
+def calc3(array, window = 0.0003):
+    v_list = []
+    p_list = []
+    # r = array[::-1]
+    r = array
+    l = len(array) - 1
+    now = r[0]
+    pos = 1
+    start_pos = 0
+    vol = 0
+    u_vol = 0
+    d_vol = 0
+    u_tag = None
+    d_tag = None
+    end_tag = None
+    while pos < l:
+
+        if now < r[pos]:
+            u_tag = pos
+            # if abs(d_vol/r[start_pos]) > window:
+            if d_tag:
+                diff = r[start_pos] - r[d_tag]
+                if abs(diff / r[start_pos]) > window:
+                    end_tag = d_tag
+                    
+        elif now > r[pos]:
+            d_tag = pos
+            # if abs(u_vol/r[start_pos]) > window:
+            if u_tag:
+                diff = r[start_pos] - r[u_tag]
+                if abs(diff / r[start_pos]) > window:
+                    end_tag = u_tag
+
+        if end_tag is None:
+            n_vol = r[pos] - now
+            u_vol = u_vol + n_vol
+            if u_vol < 0:
+                u_vol = 0
+            d_vol = d_vol + n_vol
+            if d_vol > 0:
+                d_vol = 0
+        else:
+            print("point = {},start = {}, end = {}, nvol = {:.2%}, vol = {:.2%}, u_vol = {:.2%}, d_vol = {:.2%},".format(
+            r[end_tag],start_pos, end_tag, n_vol/now, vol/r[start_pos], u_vol/r[start_pos], d_vol/r[start_pos]))
+            u_vol = 0
+            d_vol = 0
+            start_pos = end_tag
+            v_list.append(r[end_tag])
+            p_list.append(end_tag)
+            end_tag = None
+
+        vol += r[pos] - now
+        # print("now = {}, new = {}, nvol = {:.2%}, vol = {:.2%},u_vol = {:.2%},d_vol = {:.2%},".format(
+            # now, r[pos], n_vol/now, vol/r[start_pos], u_vol/r[start_pos], d_vol/r[start_pos]))
+        now = r[pos]
+        pos += 1
+
+    print(v_list)
+    print(p_list)
+
+    return v_list, p_list
+    
+
+def calc_2(array):
     v_list = []
     p_list = []
     # r = array[::-1]
@@ -27,6 +142,8 @@ def calc(array):
     vol = 0
     u_vol = 0
     d_vol = 0
+    u_tag = None
+    d_tag = None
     while pos < l:
         n_vol = r[pos] - now
         vol += r[pos] - now
@@ -37,7 +154,7 @@ def calc(array):
         if d_vol > 0:
             d_vol = 0
         if now < r[pos]:
-
+            u_tag = pos
             if x < param:
                 # n_vol = r[pos] - now  
                 # vol += n_vol
@@ -48,6 +165,7 @@ def calc(array):
                 print("positive_pos = {0}".format(positive_pos))
                     
         elif now > r[pos]:
+            d_tag = pos
             if x > -param:
 
                 x = -1 if x > 0 and r[pos] < r[start_pos] else x - 1
@@ -100,7 +218,6 @@ def calc(array):
     print(p_list)
 
     return v_list, p_list
-    
 
 def calc1(array):
     v_list = []
