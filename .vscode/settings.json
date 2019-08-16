@@ -1,0 +1,10 @@
+{
+    "favorites.resources": [
+        "vnpy\\app\\script_trader\\engine.py",
+        "app.py",
+        "script_handler.py",
+        "handler.py",
+        "vnpy/app/cta_strategy"
+    ],
+    "python.pythonPath": "D:\\Anaconda3\\envs\\vnpy\\python.exe"
+}
