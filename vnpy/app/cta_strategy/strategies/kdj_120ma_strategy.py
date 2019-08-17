@@ -30,8 +30,10 @@ class Kdj120MaStrategy(CtaTemplate):
     # last_ma = None
     bull = None
     base_wave = None
+
+    report = {"gain":0, "bull_count":0, "bear_count": 0, "king_count":0, "die_count":0, "kdj_list":[]}
     price = 0
-    calc = 0
+
 
     parameters = ["ma_window", "wave_window", "bar_min"]
     variables = ["bull", "base_wave"]
@@ -43,7 +45,7 @@ class Kdj120MaStrategy(CtaTemplate):
         )
 
         self.bg = BarGenerator(self.on_bar, self.bar_min, self.on_x_min_bar)
-        self.am = ArrayManager(200)
+        self.am = ArrayManager(400)
 
     def on_init(self):
         """
@@ -95,31 +97,35 @@ class Kdj120MaStrategy(CtaTemplate):
         w = w[::-1]
         # 持仓的情况下,检查是否低于或者高于第1波浪,根据情况进行平仓
         # if self.pos != 0:
-        #     print("持仓收盘价", bar.close_price)
-            
-                
-        if self.pos > 0 and now < self.base_wave:
+        #     print("收盘价", bar.close_price)
+
+        if self.pos > 0:
             new_wave = bar.close_price - self.interval
-            if now > self.base_wave:
+            if now < self.base_wave:
                 self.cover(bar.close_price, 1)
-                self.pos = 0
-                print("平多仓", bar.close_price)
+                # self.pos = 0
+                gain = bar.close_price - self.price
+                self.report["gain"] += gain
+                print("平多仓,价格为{},盈利{}".format(bar.close_price, gain))
             elif self.base_wave < new_wave:
                 if abs(self.base_wave - new_wave) > self.interval:
                     self.base_wave = new_wave
+                    print("平仓价更新=", new_wave)
             # self.cover(bar.close_price, 1)
             # print("平仓", bar.close_price)
-            self.pos = 0
         elif self.pos < 0:
             new_wave = bar.close_price + self.interval
             if now > self.base_wave:
-                self.cover(bar.close_price, 1)
-                self.pos = 0
-                self.calc += -(bar.close_price - self.price)
-                print("平卖空仓", bar.close_price)
+                self.sell(bar.close_price, 1)
+                # self.cover(bar.close_price, 1)
+                # self.pos = 0
+                gain = -(bar.close_price - self.price)
+                self.report["gain"] += gain
+                print("平卖空仓,价格为{},盈利{}".format(bar.close_price, gain))
             elif self.base_wave > new_wave:
                 if (self.base_wave - new_wave) > self.interval:
                     self.base_wave = new_wave
+                    print("平仓价更新=", new_wave)
                     # print("更新wave, 新wave=", new_wave)
             
 
@@ -136,55 +142,65 @@ class Kdj120MaStrategy(CtaTemplate):
         k = kdj["k"][-1]
         d = kdj["d"][-1]
         j = kdj["j"][-1]
+        # self.report["kdj_list"].append([k,d,j])
         # 均线之上,配合金叉进行
         if self.bull == 1:
+            self.report["bull_count"] += 1
             # 金叉出现,且j值大于100时
-            if k < 50 and k > d and j >= 100:
+            
+            if k < 45 and k > d:
+                self.report["king_count"] += 1
                 if now  > w[0] and \
                    w[0] < w[1] and \
                    w[0] > w[2] and \
                    w[1] > w[2]:
                    
                     if self.pos == 0:
-                        self.interval = abs((w[0] - w[2]) * 0.7)
+                        self.interval = abs((w[0] - w[2]) * 10)
                         self.buy(bar.close_price, 1)
-                        self.pos += 1
+                        # self.pos += 1
                         self.base_wave = w[0]
                         self.price = bar.close_price
-                        print("进行买多,price=",bar.close_price)
+                        print("进行买多,price={},平仓价={}".format(bar.close_price, self.base_wave))
                     elif self.pos < 0:
-                        self.interval = abs((w[0] - w[2]) * 0.7)
-                        self.pos += 1
+                        self.interval = abs((w[0] - w[2]) * 10)
+                        # self.pos += 1
+                        gain = bar.close_price - self.price
+                        self.report["gain"] += gain
                         self.cover(bar.close_price, 1)
                         self.buy(bar.close_price, 1)
                         self.base_wave = w[0]
                         self.price = bar.close_price
-                        print("平仓后买多", bar.close_price)
+                        print("平仓后买多,price={},平仓价={},盈利为{}".format(bar.close_price, self.base_wave, gain))
                         
                     
         # 均线之下
         else:
             # 死叉出现,且j值小于10时
-            if k <= 50 and k < d and j <= 10:
+            self.report["bear_count"] += 1
+            if k >= 55 and k < d:
+                self.report["die_count"] += 1
                 if now  < w[0] and \
                    w[0] > w[1] and \
                    w[0] < w[2] and \
                    w[1] < w[2]:
                     if self.pos == 0:
-                        self.interval = abs((w[0] - w[2]) * 0.7)
+                        self.interval = abs((w[0] - w[2]) * 10)
                         self.short(bar.close_price, 1)
-                        self.pos -= 1
+                        # self.pos -= 1
                         self.base_wave = w[0]
                         self.price = bar.close_price
-                        print("进行卖空,price=",bar.close_price)
+                        print("进行卖空,price={},平仓价={}".format(bar.close_price, self.base_wave))
                     elif self.pos > 0:
-                        self.interval = abs((w[0] - w[2]) * 0.7)
+                        self.interval = abs((w[0] - w[2]) * 10)
                         self.sell(bar.close_price, 1)
                         self.short(bar.close_price, 1)
-                        self.pos -= 1
+                        # self.pos -= 1
                         self.base_wave = w[0]
+                        gain = -(bar.close_price - self.price)
+                        self.report["gain"] += gain
                         self.price = bar.close_price
-                        print("平仓后卖空", bar.close_price)
+                        print("平仓后卖空,price={},平仓价={},盈利为{}".format(bar.close_price, self.base_wave, gain))
                     
                         
         self.put_event()

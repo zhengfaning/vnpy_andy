@@ -96,10 +96,12 @@ def download(args):
 @addop("backtest")
 def backtest(args):
     engine : MainEngine = args["engine"]
+    strategy_name = args["strategy"]
+    stock_name = args["stock"]
     # contracts = engine.get_all_contracts()
     cta_backtest : BacktesterEngine = engine.get_engine("CtaBacktester")
-    cta_backtest.run_backtesting("DoubleMaStrategy",
-                                 "goog.SMART",
+    cta_backtest.run_backtesting(strategy_name,
+                                 stock_name,
                                  Interval.MINUTE,
                                  datetime.datetime(2019,7,15,20),
                                  datetime.datetime(2019,8,10,5),
@@ -108,7 +110,7 @@ def backtest(args):
                                  size=1,         # 合约乘数
                                  pricetick=0.01, # 价格跳动
                                  capital=100000, # 资金
-                                 setting={"fast_window": 10, "slow_window": 30}      # 策略设置
+                                 setting={"ma_window":120, "wave_window":0.01, "bar_min":5}      # 策略设置
                                  )
     
     result_df = cta_backtest.get_result_df()

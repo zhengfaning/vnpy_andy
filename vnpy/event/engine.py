@@ -9,6 +9,7 @@ from time import sleep
 from typing import Any, Callable
 
 EVENT_TIMER = "eTimer"
+EVENT_CORPORATE = "CORPORATE"
 
 
 class Event:
@@ -83,6 +84,9 @@ class EventEngine:
             sleep(self._interval)
             event = Event(EVENT_TIMER)
             self.put(event)
+    def put_corporate(self, name, end = False):
+        event = Event(EVENT_CORPORATE, { "name":name, "end":end})
+        self.put(event)
 
     def start(self):
         """

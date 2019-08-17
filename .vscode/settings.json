@@ -4,7 +4,8 @@
         "app.py",
         "script_handler.py",
         "handler.py",
-        "vnpy/app/cta_strategy"
+        "vnpy/app/cta_strategy",
+        "run.py"
     ],
-    "python.pythonPath": "D:\\Anaconda3\\envs\\vnpy\\python.exe"
+    "python.pythonPath": "/home/zhengfaning/anaconda3/envs/vnpy/bin/python"
 }

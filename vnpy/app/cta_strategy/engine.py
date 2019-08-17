@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from threading import Thread
 from queue import Queue
 from copy import copy
-
+from multiprocessing.dummy import Pool
 from vnpy.event import Event, EventEngine
 from vnpy.trader.engine import BaseEngine, MainEngine
 from vnpy.trader.object import (
@@ -608,6 +608,41 @@ class CtaEngine(BaseEngine):
             self.init_thread = Thread(target=self._init_strategy)
             self.init_thread.start()
 
+    def _init_strategy_m(self, strategy_name, strategy):
+        """
+        Init strategies in queue.
+        """
+        if strategy.inited:
+            self.write_log(f"{strategy_name}已经完成初始化，禁止重复操作")
+            return
+
+        self.write_log(f"{strategy_name}开始执行初始化")
+
+        # Call on_init function of strategy
+        self.call_strategy_func(strategy, strategy.on_init)
+
+        # Restore strategy data(variables)
+        data = self.strategy_data.get(strategy_name, None)
+        if data:
+            for name in strategy.variables:
+                value = data.get(name, None)
+                if value:
+                    setattr(strategy, name, value)
+
+        # Subscribe market data
+        contract = self.main_engine.get_contract(strategy.vt_symbol)
+        if contract:
+            req = SubscribeRequest(
+                symbol=contract.symbol, exchange=contract.exchange)
+            self.main_engine.subscribe(req, contract.gateway_name)
+        else:
+            self.write_log(f"行情订阅失败，找不到合约{strategy.vt_symbol}", strategy)
+
+        # Put event to update init completed status.
+        strategy.inited = True
+        self.put_strategy_event(strategy)
+        self.write_log(f"{strategy_name}初始化完成")
+
     def _init_strategy(self):
         """
         Init strategies in queue.
@@ -815,6 +850,16 @@ class CtaEngine(BaseEngine):
         for strategy_name in self.strategies.keys():
             self.init_strategy(strategy_name)
 
+    def init_all_strategies_sync(self):
+        """
+        """
+        pool = Pool(5)
+        for strategy_name in self.strategies.keys():
+            strategy = self.strategies[strategy_name]
+            pool.apply_async(self._init_strategy_m, args={strategy_name, strategy})
+        pool.close()
+        pool.join()
+        
     def start_all_strategies(self):
         """
         """

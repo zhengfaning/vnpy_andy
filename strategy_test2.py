@@ -7,6 +7,7 @@ import script_handler
 import time, datetime
 import vnpy.trader.rqdata as rq
 from vnpy.trader.object import HistoryRequest
+from vnpy.gateway.hbdm.hbdm_gateway import HbdmGateway,symbol_type_map
 from vnpy.trader.constant import Exchange, Interval
 from kdj import calc_kdj
 import pandas as pd
@@ -43,24 +44,50 @@ def test1():
     # main_engine = MainEngine(event_engine)
     # log_engine = main_engine.get_engine("log")
     # event_engine.register(EVENT_CTA_LOG, log_engine.process_log_event)
+    event_engine = EventEngine()
+    gate = HbdmGateway(event_engine)
 
-    strategy = Kdj120MaStrategy(object(), "test_strategy", "baba", {"ma_window":20, "wave_window":0.1, "bar_min":2})
+    setting = {
+        "API Key": "mjlpdje3ld-701b9727-9ae52956-3ef1e",
+        "Secret Key": "b4df4824-124ec192-55786af1-a397a",
+        "会话数": 3,
+        "代理地址": "127.0.0.1",
+        "代理端口": "1080",
+    }
+    gate.connect(setting)
+    time.sleep(8)
+    print(symbol_type_map)
+    if len(symbol_type_map) <= 0:
+        return
 
     req = HistoryRequest(
-        exchange=Exchange.SMART,
-        symbol="goog",
+        exchange=Exchange.HUOBI,
+        symbol="BCH190830",
         interval=Interval.MINUTE,
-        start=datetime.datetime(2019,7,9,9),
-        end=datetime.datetime(2019,8,16,4)
+        start=datetime.datetime(2019,8,1,0),
+        end=datetime.datetime(2019,8,17,16)
     )
+    bar_data = gate.query_history(req)
+
+    strategy = Kdj120MaStrategy(object(), "test_strategy", "goog", {"ma_window":10, "wave_window":0.05, "bar_min":3})
+
+    # req = HistoryRequest(
+    #     exchange=Exchange.SMART,
+    #     symbol="goog",
+    #     interval=Interval.MINUTE,
+    #     start=datetime.datetime(2019,7,9,9),
+    #     end=datetime.datetime(2019,8,16,4)
+    # )
     
-    bar_data = rq.rqdata_client.query_history(req)
+    # bar_data = rq.rqdata_client.query_history(req)
 
     date = []
     for v in bar_data:
         strategy.on_bar(v)
         date.append(v.datetime)
 
+    # print("calc=",strategy.calc)
+    # print("bull_count={},bear_count={},king={}".format(strategy.bull_count, strategy.bear_count, strategy.king_count))
     print(strategy.report)
     # sys.exit(1)
     # dt = date

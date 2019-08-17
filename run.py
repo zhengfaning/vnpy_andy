@@ -45,6 +45,15 @@ def op():
     result = op_func(app_args)
     return result
 
+# @app.route('/optest')
+# def optest():
+#     vnapp = vnpy_app.App.instance()
+#     args = request.args
+#     print(args)
+#     op = args["cmd"]
+
+#     return args
+
 @app.route('/script')
 def script():
     vnapp = vnpy_app.App.instance()
@@ -64,17 +73,17 @@ def reload():
     reloader.reload(script_handler)
     return "重载方法"
 
-@app.route('/init')
-def init():
-    vnapp = vnpy_app.App.instance()
-    vnapp.start()
-    return "初始化vnpy系统完成"
+# @app.route('/init')
+# def init():
+#     vnapp = vnpy_app.App.instance()
+#     vnapp.start()
+#     return "初始化vnpy系统完成"
 
 
 if __name__ == "__main__":
     # vnapp = vnpy_app.App.instance()
     # vnapp.run()
-    # vnapp = vnpy_app.App.instance()
-    # vnapp.start()
+    vnapp = vnpy_app.App.instance()
+    vnapp.start()
     app.run()
     print("ok")
