@@ -102,7 +102,7 @@ class Kdj120MaStrategy(CtaTemplate):
         if self.pos > 0:
             new_wave = bar.close_price - self.interval
             if now < self.base_wave:
-                self.cover(bar.close_price, 1)
+                self.sell(bar.close_price, 1)
                 # self.pos = 0
                 gain = bar.close_price - self.price
                 self.report["gain"] += gain
@@ -116,8 +116,8 @@ class Kdj120MaStrategy(CtaTemplate):
         elif self.pos < 0:
             new_wave = bar.close_price + self.interval
             if now > self.base_wave:
-                self.sell(bar.close_price, 1)
-                # self.cover(bar.close_price, 1)
+                # self.sell(bar.close_price, 1)
+                self.cover(bar.close_price, 1)
                 # self.pos = 0
                 gain = -(bar.close_price - self.price)
                 self.report["gain"] += gain
@@ -127,7 +127,7 @@ class Kdj120MaStrategy(CtaTemplate):
                     self.base_wave = new_wave
                     print("平仓价更新=", new_wave)
                     # print("更新wave, 新wave=", new_wave)
-            
+
 
         ma_window = am.sma(self.ma_window, array=True)
         

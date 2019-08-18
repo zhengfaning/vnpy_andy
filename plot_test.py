@@ -1,7 +1,7 @@
-from pandas import Series,DataFrame
-from numpy.random import randn
-import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-df = DataFrame(randn(10,5),columns=['A','B','C','D','E'],index = np.arange(0,100,10))
-df.plot()
+
+fig = plt.figure()
+ax1 = plt.axes()
+ax1.plot([1,2,3,4,6], "o", color="darkred")
 plt.show()

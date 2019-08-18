@@ -43,7 +43,6 @@ def fig_html():
         <img src="data:image/png;base64,{}" />
     '''
     plt.close()
-    # 记得关闭，不然画出来的图是重复的
     return html.format(data)
 
 
