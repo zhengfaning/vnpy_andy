@@ -11,6 +11,7 @@ import talib
 
 from .object import BarData, TickData
 from .constant import Exchange, Interval
+from .algorithm import Algorithm
 
 
 def extract_vt_symbol(vt_symbol: str):
@@ -315,94 +316,12 @@ class ArrayManager(object):
     def wave(self, window = 0.0003):
 
         data = self.close_array
-        if len(data) <= 0:
-            return 
-        # r = array[::-1]
-        v_list = []
-        p_list = []
-        r = data
-        l = len(data) - 1
-        now = r[0]
-        v_list.append(now)
-        p_list.append(0)
-        pos = 1
-        start_pos = 0
-        vol = 0
-        u_tag = None
-        d_tag = None
-        end_tag = None
-        while pos < l:
-
-            if now < r[pos]:
-                u_tag = pos
-                if d_tag:
-                    diff = r[start_pos] - r[d_tag]
-                    if abs(diff / r[start_pos]) > window:
-                        end_tag = d_tag
-                        
-            elif now > r[pos]:
-                d_tag = pos
-                if u_tag:
-                    diff = r[start_pos] - r[u_tag]
-                    if abs(diff / r[start_pos]) > window:
-                        end_tag = u_tag
-
-            if not end_tag is None:
-                # print("point = {},start = {}, end = {}, vol = {:.2%}".format(
-                # r[end_tag],start_pos, end_tag, vol/r[start_pos]))
-                start_pos = end_tag
-                v_list.append(r[end_tag])
-                p_list.append(end_tag)
-                end_tag = None
-
-            vol += r[pos] - now
-            now = r[pos]
-            pos += 1
-        # print(v_list)
-        # print(p_list)
-        return v_list, p_list
+        
+        return Algorithm.wave(data, window)
 
     def kdj(self, fastk_period=9, slowk_period=3, slowd_period=3):
         #计算kd指标
-        # high_prices = np.array([v['high'] for v in data])
-        # low_prices = np.array([v['low'] for v in data])
-        # close_prices = np.array([v['close'] for v in data])
-
-        max_close = talib.MAX(self.high_array, timeperiod=fastk_period)
-        min_close = talib.MIN(self.low_array, timeperiod=fastk_period)
-        
-        for k in range(len(self.low_array)):
-            if k<fastk_period and k>1:
-                aaa = talib.MIN(self.low_array,timeperiod=k)
-                bbb = talib.MAX(self.high_array,timeperiod=k)
-                min_close[k]= aaa[k]
-                max_close[k]= bbb[k]
-            elif k==1 or k==0:
-                min_close[k]=self.low_array[k]
-                max_close[k]=self.high_array[k]
-        # rsv = maxmin(data, fastk_period)
-        diff = max_close - min_close
-
-        fast_k = (self.close_array - min_close)/diff *100
-        ppp = max_close - min_close
-        for t in range(len(self.close_array)):
-            if max_close[t] == min_close[t]:
-                fast_k[t] = 0
-        slow_k1 = np.full_like(self.close_array,50)
-        slow_d1 = np.full_like(self.close_array,50)
-        for k in range(1,len(fast_k)):
-            slow_k1[k] = slow_k1[k-1]*2/3+fast_k[k]/3
-            slow_d1[k] = slow_d1[k-1]*2/3+slow_k1[k]/3
-        
-        indicators= {
-            'rsv':fast_k,
-            'max':max_close,
-            'min':min_close,
-            'k': slow_k1,
-            'd': slow_d1,
-            'j': 3 * slow_k1 - 2 * slow_d1
-        }
-        return indicators
+        return Algorithm.kdj(self.high_array, self.low_array, self.close_array, fastk_period, slowk_period, slowd_period)
 
     def update_bar(self, bar):
         """

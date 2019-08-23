@@ -7,5 +7,5 @@
         "vnpy/app/cta_strategy",
         "run.py"
     ],
-    "python.pythonPath": "/home/zhengfaning/anaconda3/envs/vnpy/bin/python"
+    "python.pythonPath": "C:\\Users\\Andy\\Anaconda3\\envs\\vnpy\\python.exe"
 }

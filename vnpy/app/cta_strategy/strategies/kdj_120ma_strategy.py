@@ -9,6 +9,8 @@ from vnpy.app.cta_strategy import (
     ArrayManager,
 )
 
+from vnpy.trader.constant import Direction, Offset
+from vnpy.trader.algorithm import Algorithm
 """
 算法描述:  
     定义15min回调,使用sma算法计算120ma均线,求出后成
@@ -45,7 +47,7 @@ class Kdj120MaStrategy(CtaTemplate):
         )
 
         self.bg = BarGenerator(self.on_bar, self.bar_min, self.on_x_min_bar)
-        self.am = ArrayManager(400)
+        self.am = ArrayManager(200)
 
     def on_init(self):
         """
@@ -86,15 +88,19 @@ class Kdj120MaStrategy(CtaTemplate):
 
         am = self.am
         am.update_bar(bar)
+        if self.tracker is not None:
+            self.tracker["bar_data"].append(bar)
         if not am.inited:
             return
         
         # 现在的价格
         now = bar.close_price
 
-        w,_ = self.am.wave()
-        
+        # ma_data = am.sma(5, array=True)
+        # w,w_pos = Algorithm.wave(ma_data, self.wave_window)
+        w,w_pos = self.am.wave(self.wave_window)
         w = w[::-1]
+        w_pos = w_pos[::-1]
         # 持仓的情况下,检查是否低于或者高于第1波浪,根据情况进行平仓
         # if self.pos != 0:
         #     print("收盘价", bar.close_price)
@@ -102,6 +108,7 @@ class Kdj120MaStrategy(CtaTemplate):
         if self.pos > 0:
             new_wave = bar.close_price - self.interval
             if now < self.base_wave:
+                
                 self.sell(bar.close_price, 1)
                 # self.pos = 0
                 gain = bar.close_price - self.price
@@ -128,6 +135,11 @@ class Kdj120MaStrategy(CtaTemplate):
                     print("平仓价更新=", new_wave)
                     # print("更新wave, 新wave=", new_wave)
 
+        if len(w) < 3:
+            return
+
+        total_interval = (w_pos[0] - w_pos[1]) + (w_pos[1] - w_pos[2])
+        
 
         ma_window = am.sma(self.ma_window, array=True)
         
@@ -142,28 +154,36 @@ class Kdj120MaStrategy(CtaTemplate):
         k = kdj["k"][-1]
         d = kdj["d"][-1]
         j = kdj["j"][-1]
+        trade_info = None
         # self.report["kdj_list"].append([k,d,j])
         # 均线之上,配合金叉进行
         if self.bull == 1:
             self.report["bull_count"] += 1
             # 金叉出现,且j值大于100时
-            
             if k < 45 and k > d:
                 self.report["king_count"] += 1
-                if now  > w[0] and \
+                if len(w) >= 3 and \
+                   now  > w[0] and \
                    w[0] < w[1] and \
                    w[0] > w[2] and \
                    w[1] > w[2]:
-                   
+                    wave_data = list(map(lambda x,y:{self.am.time_array[x]:y}, w_pos[0:3], w))
+                    trade_info = { "k":k, "d":d, 
+                                   "direction": Direction.LONG,
+                                   "wave": wave_data,
+                                   "total_interval": total_interval,
+                                 }
                     if self.pos == 0:
-                        self.interval = abs((w[0] - w[2]) * 10)
+                        self.interval = abs((w[0] - w[2]) * 0.8)
                         self.buy(bar.close_price, 1)
                         # self.pos += 1
                         self.base_wave = w[0]
                         self.price = bar.close_price
-                        print("进行买多,price={},平仓价={}".format(bar.close_price, self.base_wave))
+                        trade_info["price"] = bar.close_price
+                        trade_info["interval"] = self.interval
+                        trade_info["offset"] = Offset.OPEN
                     elif self.pos < 0:
-                        self.interval = abs((w[0] - w[2]) * 10)
+                        self.interval = abs((w[0] - w[2]) * 0.8)
                         # self.pos += 1
                         gain = bar.close_price - self.price
                         self.report["gain"] += gain
@@ -171,26 +191,35 @@ class Kdj120MaStrategy(CtaTemplate):
                         self.buy(bar.close_price, 1)
                         self.base_wave = w[0]
                         self.price = bar.close_price
-                        print("平仓后买多,price={},平仓价={},盈利为{}".format(bar.close_price, self.base_wave, gain))
-                        
-                    
+                        trade_info["price"] = bar.close_price
+                        trade_info["interval"] = self.interval
+                        trade_info["offset"] = Offset.CLOSE
         # 均线之下
         else:
             # 死叉出现,且j值小于10时
             self.report["bear_count"] += 1
             if k >= 55 and k < d:
                 self.report["die_count"] += 1
-                if now  < w[0] and \
+                if len(w) >= 3 and \
+                   now  < w[0] and \
                    w[0] > w[1] and \
                    w[0] < w[2] and \
                    w[1] < w[2]:
+                    wave_data = list(map(lambda x,y:{self.am.time_array[x]:y}, w_pos[0:3], w))
+                    trade_info = { "k":k, "d":d, 
+                                   "direction": Direction.SHORT,
+                                   "wave": wave_data,
+                                   "total_interval": total_interval,
+                                 }
                     if self.pos == 0:
                         self.interval = abs((w[0] - w[2]) * 10)
                         self.short(bar.close_price, 1)
                         # self.pos -= 1
                         self.base_wave = w[0]
                         self.price = bar.close_price
-                        print("进行卖空,price={},平仓价={}".format(bar.close_price, self.base_wave))
+                        trade_info["price"] = bar.close_price
+                        trade_info["interval"] = self.interval
+                        trade_info["offset"] = Offset.OPEN
                     elif self.pos > 0:
                         self.interval = abs((w[0] - w[2]) * 10)
                         self.sell(bar.close_price, 1)
@@ -200,8 +229,11 @@ class Kdj120MaStrategy(CtaTemplate):
                         gain = -(bar.close_price - self.price)
                         self.report["gain"] += gain
                         self.price = bar.close_price
-                        print("平仓后卖空,price={},平仓价={},盈利为{}".format(bar.close_price, self.base_wave, gain))
-                    
+                        trade_info["price"] = bar.close_price
+                        trade_info["interval"] = self.interval
+                        trade_info["offset"] = Offset.CLOSE
+        if self.tracker is not None and trade_info is not None:
+            self.tracker["trade_info"].append(trade_info)            
                         
         self.put_event()
 

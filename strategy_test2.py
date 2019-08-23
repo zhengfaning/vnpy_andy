@@ -69,59 +69,14 @@ def test1():
     )
     bar_data = gate.query_history(req)
 
-    strategy = Kdj120MaStrategy(object(), "test_strategy", "goog", {"ma_window":10, "wave_window":0.05, "bar_min":3})
+    tracker = {"ma_tag":[], "var":[], "var1":[], "var2":[], "trade_info":[]}
+    strategy = Kdj120MaStrategy(object(), "test_strategy", "goog", {"ma_window":30, "wave_window":wave_window, "bar_min":1, "tracker":tracker})
 
-    # req = HistoryRequest(
-    #     exchange=Exchange.SMART,
-    #     symbol="goog",
-    #     interval=Interval.MINUTE,
-    #     start=datetime.datetime(2019,7,9,9),
-    #     end=datetime.datetime(2019,8,16,4)
-    # )
-    
-    # bar_data = rq.rqdata_client.query_history(req)
-
-    date = []
-    for v in bar_data:
-        strategy.on_bar(v)
-        date.append(v.datetime)
-
-    # print("calc=",strategy.calc)
-    # print("bull_count={},bear_count={},king={}".format(strategy.bull_count, strategy.bear_count, strategy.king_count))
-    print(strategy.report)
-    # sys.exit(1)
-    # dt = date
-    # close = strategy.am.close_array
-    # rect1 = [0.14, 0.35, 0.77, 0.6] # [左, 下, 宽, 高] 规定的矩形区域 （全部是0~1之间的数，表示比例）
-    # rect2 = [0.14, 0.05, 0.77, 0.2]
-    # fig  = plt.figure()
-    # ax1 = plt.axes(rect1)
-    # ax2 = plt.axes(rect2)
-    # ax1 = fig.add_subplot(2,1,1)
-    # print(dt)
-    # print(close)
-    # ax1.plot(dt,close)
-    
-
-    # v_list, p_list = strategy.am.wave()
-    # for i in range(len(p_list)):
-    #     p = p_list[i]
-    #     ax1.plot([dt[p]], [close[p]], 'o')
-    #     ax1.annotate(close[p], xy=(dt[p], close[p]))
-    # print(close)
-    # sma120 = talib.SMA(close, timeperiod = 60) 
-    # ax1.plot(dt,sma120)
-    # # ax2 = fig.add_subplot(2,1,2)
-    # kdj_data = strategy.am.kdj()
-    # ax2.plot(dt,kdj_data["k"], "r")
-    # ax2.plot(dt,kdj_data["d"], "b")
-    # ax2.plot(dt,kdj_data["j"], "y")
-    
-
-    # ax2 = fig.add_subplot(2,1,2)
+    for data in bar_data:
+        strategy.on_bar(data)
     
     
-    # plt.show()
+    
 
 if __name__ == "__main__":
     test1()

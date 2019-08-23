@@ -32,6 +32,7 @@ class CtaTemplate(ABC):
         self.inited = False
         self.trading = False
         self.pos = 0
+        self.tracker = None
 
         # Copy a new variables list here to avoid duplicate insert when multiple 
         # strategy instances are created with the same strategy class.
@@ -49,6 +50,8 @@ class CtaTemplate(ABC):
         for name in self.parameters:
             if name in setting:
                 setattr(self, name, setting[name])
+        if "tracker" in setting:
+                setattr(self, "tracker", setting["tracker"])
 
     @classmethod
     def get_class_parameters(cls):
