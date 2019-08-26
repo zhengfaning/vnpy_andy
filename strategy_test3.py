@@ -33,7 +33,7 @@ from vnpy.app.cta_strategy.strategies.kdj_120ma_strategy import Kdj120MaStrategy
 from vnpy.app.cta_backtester import CtaBacktesterApp
 from vnpy.trader.constant import Direction, Offset
 from bokeh.io import output_file, show
-from bokeh.plotting import figure
+from bokeh.plotting import figure, ColumnDataSource
 from bokeh.models import Label
 from bokeh.themes import built_in_themes
 from bokeh.io import curdoc
@@ -205,9 +205,10 @@ def test2():
 
     # backtester_engine.run_downloading("goog.SMART", Interval.MINUTE, datetime.datetime(2019,7,15,20), datetime.datetime(2019,8,10,5))
     # strategy_name = "MultiTimeframeStrategy"
-    strategy_name = "Kdj120MaStrategy"
+    strategy_name = "MaLevelTrackStrategy"
     # stock_name = "BCH190830.HUOBI"
-    stock_name = "XBTUSD.BITMEX"
+    stock_name = "fb.SMART"
+    # stock_name = "XBTUSD.BITMEX"
     start_date = datetime.datetime(2019,7,1,20)
     end_date = datetime.datetime(2019,8,22,12)
     # start_date = datetime.datetime(2019,7,15,20)
@@ -215,13 +216,13 @@ def test2():
     wave_window = 0.0001
     # contracts = engine.get_all_contracts()
 
-    tracker = {"bar_data":[], "trade_info":[]}
-    # tracker = {"ma_tag":[], "var":[], "var1":[], "var2":[], "trade_info":[]}
+    # tracker = {"bar_data":[], "trade_info":[]}
+    tracker = {"ma_tag":[], "var":[], "var1":[], "var2":[], "trade_info":[], "ma_tag_ls":[]}
     backtester_engine.run_backtesting(strategy_name,
                                  stock_name,
                                  Interval.MINUTE,
-                                 datetime.datetime(2019,7,15,20),
-                                 datetime.datetime(2019,8,22,12),
+                                 start_date,
+                                 end_date,
                                  rate=2.9/10000, # 手续费
                                  slippage=0.2,   # 滑点
                                  size=1,         # 合约乘数
@@ -278,19 +279,44 @@ def test2():
         "total_pnl":"总盈亏",    
         "net_pnl":"净盈亏"})
     print(df)
+    tooltip_x = []
+    tooltip_y = []
+    tooltip_desc = []
 
-    plot = figure(aspect_scale=0.3, match_aspect=False,plot_width=1100, plot_height=450,x_axis_label="date", y_axis_label="high",
+    if "ma_tag_ls" in tracker:
+        for item in tracker["ma_tag_ls"]:
+            index = date_index[item[0]]
+            tooltip_x.append(int(index))
+            tooltip_y.append(item[1])
+            desc = str(item[2])
+            tooltip_desc.append(desc)
+
+
+    source = ColumnDataSource(data=dict(
+        x=tooltip_x,
+        y=tooltip_y,
+        desc=tooltip_desc,
+    ))
+
+    TOOLTIPS = [
+        ("index", "$index"),
+        ("(x,y)", "($x, $y)"),
+        ("desc", "@desc"),
+    ]
+
+    plot = figure(aspect_scale=0.3, match_aspect=False,plot_width=1100, plot_height=450,x_axis_label="date", y_axis_label="high", tooltips=TOOLTIPS,
                    tools="pan,reset,save,wheel_zoom,xwheel_zoom,ywheel_zoom")
     close = np.array(close)
     high = np.array(high)
     low = np.array(low)
     plot.xaxis.major_label_overrides = date
-    plot.line(x = dt, y = close, color=palettes_colors[0], line_width=1.5)
+    # plot.line(x = dt, y = close, color=palettes_colors[0], line_width=1.5, source=source)
+    plot.circle("x", "y", color=palettes_colors[0], size=7, source=source)
     
     sma1 = talib.SMA(close, timeperiod = 2)
     # sma_x = talib.SMA(close, timeperiod = 5)
     w,w_pos = Algorithm.wave(close, wave_window)
-    plot.circle(x=w_pos, y=w, color=colors.named.black, legend="all wave")
+    # plot.circle(x=w_pos, y=w, color=colors.named.black, legend="all wave")
 
     plot.circle(x=dt_w, y=data_w, color=colors.named.black, legend="wave")
 
@@ -566,7 +592,7 @@ def download3():
     print("download 完成")
 
 if __name__ == "__main__":
-    # download("baba.SMART")
+    # download("fb.SMART")
     test2()
     # download3()
 

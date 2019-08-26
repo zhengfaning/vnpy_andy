@@ -14,7 +14,7 @@ from functools import reduce
 class MaLevelTrackStrategy(CtaTemplate):
     author = "用Python的交易员"
 
-    ma_level = [5, 10, 20, 30, 60]
+    ma_level = [10, 20, 30, 60, 120]
     ma_tag = []
     fast_ma0 = 0.0
     fast_ma1 = 0.0
@@ -76,9 +76,10 @@ class MaLevelTrackStrategy(CtaTemplate):
             ma = self.am.sma(i, True)[-1]
             ma_lvl.append(ma)
         
-        now = self.am.sma(2, True)[-1]
+        
         l = len(ma_lvl)
         ma_lvl_tag = []
+        now = bar.close_price
         direction = 1 if now > ma_lvl[0] else 0
         ma_lvl_tag.append(direction)
         for i in range(l-1):
@@ -89,13 +90,14 @@ class MaLevelTrackStrategy(CtaTemplate):
         if len(bincount_val) == 2:
             tag_val = bincount_val[1]
 
-        if len(self.ma_tag) < 100:
+        if len(self.ma_tag) < 200:
             self.ma_tag.append(tag_val)
         else:
             self.ma_tag[:-1] = self.ma_tag[1:]
             self.ma_tag[-1] = tag_val
-
-        if not am.inited:
+        if self.tracker is not None:
+            self.tracker["ma_tag_ls"].append((bar.datetime, bar.close_price, tag_val))
+        if not am.inited or not self.trading:
             return
         
         # var_val = np.var(np.array(self.ma_tag[-10:]))
@@ -106,8 +108,21 @@ class MaLevelTrackStrategy(CtaTemplate):
         #     print(direction)
         #     print(self.ma_tag[-10:])
         #     self.buy(bar.close_price, 1)
-        if self.ma_tag[-1] == 3 and self.ma_tag[-2] == 2 and 0 in self.ma_tag[-6:]:
-            self.buy(bar.close_price, 1)
+        if self.pos == 0:
+            calc_nums = np.array(self.ma_tag[-45:-15])
+            var_val = np.var(calc_nums)
+            std_val = np.std(calc_nums)
+            mean_val = np.mean(calc_nums)
+            median_val = np.median(calc_nums)
+            if len(self.tracker["ma_tag_ls"]) >= 3330:
+                print(std_val, mean_val, self.ma_tag[-6:-1])
+            if std_val < 0.5 and mean_val < 1 and 1 in self.ma_tag[-6:] and self.ma_tag[-1] >= 2:
+                self.buy(bar.close_price, 1)
+            elif std_val < 0.5 and mean_val > 3 and 2 in self.ma_tag[-6:-1] and self.ma_tag[-1] <= 1:
+                self.sell(bar.close_price, 1)
+        # elif self.pos > 0:
+        #     if self.ma_tag[-1] == 3 and self.ma_tag[-1] == 4 and 5 in self.ma_tag[-5:]:
+        #         self.sell(bar.close_price, 1)
         #     direction = int(reduce(lambda x,y:y-x, self.ma_tag[-10:]))
         #     print(var_val)
         #     print(direction)
