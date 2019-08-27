@@ -204,10 +204,10 @@ def test2():
     backtester_engine.init_engine()
 
     # backtester_engine.run_downloading("goog.SMART", Interval.MINUTE, datetime.datetime(2019,7,15,20), datetime.datetime(2019,8,10,5))
-    # strategy_name = "MultiTimeframeStrategy"
-    strategy_name = "MaLevelTrackStrategy"
+    strategy_name = "MultiTimeframeStrategy"
+    # strategy_name = "MaLevelTrackStrategy"
     # stock_name = "BCH190830.HUOBI"
-    stock_name = "fb.SMART"
+    stock_name = "amd.SMART"
     # stock_name = "XBTUSD.BITMEX"
     start_date = datetime.datetime(2019,7,1,20)
     end_date = datetime.datetime(2019,8,22,12)
@@ -217,7 +217,7 @@ def test2():
     # contracts = engine.get_all_contracts()
 
     # tracker = {"bar_data":[], "trade_info":[]}
-    tracker = {"ma_tag":[], "var":[], "var1":[], "var2":[], "trade_info":[], "ma_tag_ls":[]}
+    tracker = {"bar_data":[], "trade_info":[], "ma_tag":[], "var":[], "var1":[], "var2":[], "trade_info":[], "ma_tag_ls":[]}
     backtester_engine.run_backtesting(strategy_name,
                                  stock_name,
                                  Interval.MINUTE,
@@ -288,7 +288,7 @@ def test2():
             index = date_index[item[0]]
             tooltip_x.append(int(index))
             tooltip_y.append(item[1])
-            desc = str(item[2])
+            desc = "{}  {:.2f}  {:.2f}".format(item[2], item[3], item[4])
             tooltip_desc.append(desc)
 
 
@@ -592,7 +592,7 @@ def download3():
     print("download 完成")
 
 if __name__ == "__main__":
-    # download("fb.SMART")
+    # download("amd.SMART")
     test2()
     # download3()
 

@@ -95,8 +95,7 @@ class MaLevelTrackStrategy(CtaTemplate):
         else:
             self.ma_tag[:-1] = self.ma_tag[1:]
             self.ma_tag[-1] = tag_val
-        if self.tracker is not None:
-            self.tracker["ma_tag_ls"].append((bar.datetime, bar.close_price, tag_val))
+
         if not am.inited or not self.trading:
             return
         
@@ -108,17 +107,21 @@ class MaLevelTrackStrategy(CtaTemplate):
         #     print(direction)
         #     print(self.ma_tag[-10:])
         #     self.buy(bar.close_price, 1)
-        if self.pos == 0:
-            calc_nums = np.array(self.ma_tag[-45:-15])
-            var_val = np.var(calc_nums)
-            std_val = np.std(calc_nums)
-            mean_val = np.mean(calc_nums)
-            median_val = np.median(calc_nums)
-            if len(self.tracker["ma_tag_ls"]) >= 3330:
-                print(std_val, mean_val, self.ma_tag[-6:-1])
-            if std_val < 0.5 and mean_val < 1 and 1 in self.ma_tag[-6:] and self.ma_tag[-1] >= 2:
+        calc_nums = np.array(self.ma_tag[-45:-15])
+        # var_val = np.var(calc_nums)
+        std_val = np.std(calc_nums)
+        mean_val = np.mean(calc_nums)
+        # median_val = np.median(calc_nums)
+
+        if self.tracker is not None:
+            self.tracker["ma_tag_ls"].append((bar.datetime, bar.close_price, tag_val, std_val, mean_val))
+        # if self.pos == 0:
+
+            # if len(self.tracker["ma_tag_ls"]) >= 3330:
+            #     print(std_val, mean_val, self.ma_tag[-6:-1])
+            if std_val < 0.6 and mean_val < 2 and self.ma_tag[-1] >= (mean_val + 2):
                 self.buy(bar.close_price, 1)
-            elif std_val < 0.5 and mean_val > 3 and 2 in self.ma_tag[-6:-1] and self.ma_tag[-1] <= 1:
+            elif std_val < 0.6 and mean_val > 3 and self.ma_tag[-1] <= (mean_val - 2):
                 self.sell(bar.close_price, 1)
         # elif self.pos > 0:
         #     if self.ma_tag[-1] == 3 and self.ma_tag[-1] == 4 and 5 in self.ma_tag[-5:]:
