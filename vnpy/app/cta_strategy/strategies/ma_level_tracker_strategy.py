@@ -10,6 +10,7 @@ from vnpy.app.cta_strategy import (
 )
 import numpy as np
 from functools import reduce
+from abu.UtilBu.ABuRegUtil import calc_regress_deg
 
 class MaLevelTrackStrategy(CtaTemplate):
     author = "用Python的交易员"
@@ -107,22 +108,36 @@ class MaLevelTrackStrategy(CtaTemplate):
         #     print(direction)
         #     print(self.ma_tag[-10:])
         #     self.buy(bar.close_price, 1)
-        calc_nums = np.array(self.ma_tag[-45:-15])
+        # calc_nums = np.array(self.ma_tag[-45:-15])
+        calc_nums = np.array(self.ma_tag[-50:-10])
         # var_val = np.var(calc_nums)
         std_val = np.std(calc_nums)
         mean_val = np.mean(calc_nums)
         # median_val = np.median(calc_nums)
 
         if self.tracker is not None:
-            self.tracker["ma_tag_ls"].append((bar.datetime, bar.close_price, tag_val, std_val, mean_val))
+            deg1 = calc_regress_deg(self.am.close[-50:-25], False)
+            deg2 = calc_regress_deg(self.am.close[-25:], False)
+            deg3 = calc_regress_deg(self.am.close[-50:-25], False, False)
+            deg4 = calc_regress_deg(self.am.close[-25:], False, False)
+            deg_full = calc_regress_deg(self.am.close[-50:], False)
+            self.tracker["ma_tag_ls"].append((bar.datetime, bar.close_price, tag_val, std_val, mean_val, deg1, deg2, deg_full))
         # if self.pos == 0:
 
             # if len(self.tracker["ma_tag_ls"]) >= 3330:
             #     print(std_val, mean_val, self.ma_tag[-6:-1])
-            if std_val < 0.6 and mean_val < 2 and self.ma_tag[-1] >= (mean_val + 2):
-                self.buy(bar.close_price, 1)
-            elif std_val < 0.6 and mean_val > 3 and self.ma_tag[-1] <= (mean_val - 2):
-                self.sell(bar.close_price, 1)
+        if std_val < 1 and mean_val < 2 and self.ma_tag[-1] >= (mean_val + 2):
+
+            self.tracker["trade_info"].append((
+                self.am.time_array[-50], self.am.time_array[-25], bar.datetime, deg1, deg2))
+            # calc_regress_deg(self.am.close[-25:])
+            self.buy(bar.close_price, 1)
+        elif std_val < 1 and mean_val > 3 and self.ma_tag[-1] <= (mean_val - 2):
+
+            self.tracker["trade_info"].append((
+                self.am.time_array[-50], self.am.time_array[-25], bar.datetime, deg1, deg2))
+            # calc_regress_deg(self.am.close[-25:])
+            self.sell(bar.close_price, 1)
         # elif self.pos > 0:
         #     if self.ma_tag[-1] == 3 and self.ma_tag[-1] == 4 and 5 in self.ma_tag[-5:]:
         #         self.sell(bar.close_price, 1)
