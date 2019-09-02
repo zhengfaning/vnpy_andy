@@ -15,6 +15,13 @@ import abu.UtilBu.ABuRegUtil as reg_util
 from vnpy.trader.object import Status
 from vnpy.trader.constant import Direction, Exchange, Interval, Offset, Status, Product, OptionType, OrderType
 from dataclasses import dataclass, field
+from  enum import Enum
+
+
+class ClosePosType(Enum):
+    SAFE_PRICE = 1
+    TREND_CHANGE = 2
+
 
 @dataclass
 class Poisition:
@@ -24,10 +31,36 @@ class Poisition:
     price: float = 0
     safe_price: float = 0
     order_data = np.array([])
+    # 形态预测出错修正
+    last_close_info = None
     def __init__(self, strategy):
         self.strategy:MaLevelTrackStrategy  = strategy
         # self.am = self.strategy.am
         self.ma_tag = self.strategy.ma_tag
+
+    def buy(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.MARKET):
+        """
+        Send buy order to open a long position.
+        """
+        return self.strategy.send_order(Direction.LONG, Offset.OPEN, price, volume, lock, type)
+
+    def sell(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.MARKET):
+        """
+        Send sell order to close a long position.
+        """
+        return self.strategy.send_order(Direction.SHORT, Offset.CLOSE, price, volume, lock, type)
+
+    def short(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.MARKET):
+        """
+        Send short order to open as short position.
+        """
+        return self.strategy.send_order(Direction.SHORT, Offset.OPEN, price, volume, lock, type)
+
+    def cover(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.MARKET):
+        """
+        Send cover order to close a short position.
+        """
+        return self.strategy.send_order(Direction.LONG, Offset.CLOSE, price, volume, lock, type)
 
     def on_bar(self, bar:BarData):
         if self.volumn == 0:
@@ -37,12 +70,14 @@ class Poisition:
 
         if self.volumn < 0:
             if bar.close_price > self.close_price:
-                order_id = self.strategy.cover(self.close_price, 1)
+                order_id = self.strategy.cover(self.close_price, 1, type=OrderType.MARKET)
                 return order_id
         elif self.volumn > 0:
             if bar.close_price < self.close_price:
-                order_id = self.strategy.sell(self.close_price, 1)
+                order_id = self.strategy.sell(self.close_price, 1, type=OrderType.MARKET)
                 return order_id
+        
+        order_id = None
         offset = -40
         offset_m = int(offset / 2)
         
@@ -74,16 +109,24 @@ class Poisition:
                 if self.volumn > 0:
                     if deg_full < -0.05 and std_val < 1:
                         if abs(deg_order_short) < abs(deg_full):
-                            order_id = self.strategy.sell(bar.close_price, 1)
+                            order_id = self.strategy.sell(bar.close_price, 1, type=OrderType.MARKET)
                 elif self.volumn < 0:
                     if deg_full > 0.05 and std_val < 1:
                         if abs(deg_order_short) < abs(deg_full):
-                            order_id = self.strategy.cover(bar.close_price, 1)
+                            order_id = self.strategy.cover(bar.close_price, 1, type=OrderType.MARKET)
 
             print("pos<0", deg_order_short, deg_full)
+        
+        return order_id
             # # print(deg)
             # if abs(deg_order_short) < abs(deg_full):
             #     order_id = self.strategy.cover(bar.close_price, 1) 
+    def on_trade(self, trade: TradeData):
+        """
+        Callback of new trade data update.
+        """
+        self.put_event()
+
 
     def on_order(self, order: OrderData):
         if order.status == Status.ALLTRADED or order.status == Status.PARTTRADED:
@@ -241,12 +284,12 @@ class MaLevelTrackStrategy(CtaTemplate):
                 is_order = True
                 self.tracker["trade_info"].append((
                     self.am.time_array[offset], self.am.time_array[offset_m], bar.datetime, deg1, deg2))
-                order_id = self.buy(bar.close_price, 1)
+                order_id = self.buy(bar.close_price, 1, type=OrderType.MARKET)
             elif std_val < 1 and mean_val > 3 and self.ma_tag[-1] <= (mean_val - 2):
                 is_order = True
                 self.tracker["trade_info"].append((
                     self.am.time_array[offset], self.am.time_array[offset_m], bar.datetime, deg1, deg2))
-                order_id = self.short(bar.close_price, 1)
+                order_id = self.short(bar.close_price, 1, type=OrderType.MARKET)
         else:
             order_id = self.positions.on_bar(bar)
             # if order_id is not None:
@@ -306,6 +349,8 @@ class MaLevelTrackStrategy(CtaTemplate):
         """
         Callback of new order data update.
         """
+        print("{}产生了{},价格为{},交易{},".format(order.datetime.strftime("%m/%d %H:%M:%S"), order.offset.value + order.direction.value,order.price,order.status.value))
+        
         if order.vt_orderid in self.request_order:
             self.positions.on_order(order)
             if order.status == Status.ALLTRADED or order.status == Status.CANCELLED or order.status == Status.REJECTED:

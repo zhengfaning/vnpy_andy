@@ -13,7 +13,7 @@ import seaborn as sns
 from pandas import DataFrame
 from deap import creator, base, tools, algorithms
 
-from vnpy.trader.constant import (Direction, Offset, Exchange, 
+from vnpy.trader.constant import (Direction, Offset, Exchange, OrderType,
                                   Interval, Status)
 from vnpy.trader.database import database_manager
 from vnpy.trader.object import OrderData, TradeData, BarData, TickData
@@ -719,7 +719,6 @@ class BacktestingEngine:
         self.strategy.on_tick(tick)
 
         self.update_daily_close(tick.last_price)
-
     def cross_limit_order(self):
         """
         Cross limit order with last bar/tick data.
@@ -737,25 +736,43 @@ class BacktestingEngine:
 
         for order in list(self.active_limit_orders.values()):
             # Push order update with status "not traded" (pending).
+
             if order.status == Status.SUBMITTING:
                 order.status = Status.NOTTRADED
                 self.strategy.on_order(order)
-
+            order:OrderData = order
+            pos_change = 0
+            trade_price = 0
+            if order.type == OrderType.LIMIT:
             # Check whether limit orders can be filled.
-            long_cross = (
-                order.direction == Direction.LONG 
-                and order.price >= long_cross_price 
-                and long_cross_price > 0
-            )
+                long_cross = (
+                    order.direction == Direction.LONG 
+                    and order.price >= long_cross_price 
+                    and long_cross_price > 0
+                )
 
-            short_cross = (
-                order.direction == Direction.SHORT 
-                and order.price <= short_cross_price 
-                and short_cross_price > 0
-            )
+                short_cross = (
+                    order.direction == Direction.SHORT 
+                    and order.price <= short_cross_price 
+                    and short_cross_price > 0
+                )
 
-            if not long_cross and not short_cross:
-                continue
+                if not long_cross and not short_cross:
+                    continue
+
+                if long_cross:
+                    trade_price = min(order.price, long_best_price)
+                    pos_change = order.volume
+                else:
+                    trade_price = max(order.price, short_best_price)
+                    pos_change = -order.volume
+            else:
+                if order.direction == Direction.LONG:
+                    trade_price = self.bar.high_price
+                    pos_change = order.volume
+                else:
+                    trade_price = self.bar.low_price
+                    pos_change = -order.volume
 
             # Push order udpate with status "all traded" (filled).
             order.traded = order.volume
@@ -766,14 +783,6 @@ class BacktestingEngine:
 
             # Push trade update
             self.trade_count += 1
-
-            if long_cross:
-                trade_price = min(order.price, long_best_price)
-                pos_change = order.volume
-            else:
-                trade_price = max(order.price, short_best_price)
-                pos_change = -order.volume
-
             trade = TradeData(
                 symbol=order.symbol,
                 exchange=order.exchange,
@@ -899,15 +908,18 @@ class BacktestingEngine:
         offset: Offset,
         price: float,
         volume: float,
-        stop: bool,
-        lock: bool
+        lock: bool,
+        order_type: OrderType,
     ):
         """"""
         price = round_to(price, self.pricetick)
-        if stop:
+        if order_type == order_type.STOP:
             vt_orderid = self.send_stop_order(direction, offset, price, volume)
+        elif order_type == order_type.MARKET:
+            vt_orderid = self.send_market_order(direction, offset, price, volume)
         else:
             vt_orderid = self.send_limit_order(direction, offset, price, volume)
+
         return [vt_orderid]
 
     def send_stop_order(
@@ -934,6 +946,35 @@ class BacktestingEngine:
         self.stop_orders[stop_order.stop_orderid] = stop_order
 
         return stop_order.stop_orderid
+
+    def send_market_order(
+        self, 
+        direction: Direction,
+        offset: Offset,
+        price: float, 
+        volume: float
+    ):
+        """"""
+        self.limit_order_count += 1
+        
+        order = OrderData(
+            symbol=self.symbol,
+            exchange=self.exchange,
+            orderid=str(self.limit_order_count),
+            type=OrderType.MARKET,
+            direction=direction,
+            offset=offset,
+            price=price,
+            volume=volume,
+            status=Status.SUBMITTING,
+            gateway_name=self.gateway_name,
+        )
+        order.datetime = self.datetime
+
+        self.active_limit_orders[order.vt_orderid] = order
+        self.limit_orders[order.vt_orderid] = order
+
+        return order.vt_orderid
 
     def send_limit_order(
         self, 

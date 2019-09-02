@@ -38,7 +38,7 @@ from bokeh.io import curdoc
 from bokeh.palettes import d3, brewer, mpl
 from bokeh.core.enums import colors
 from bokeh.layouts import column, gridplot
-from bokeh.models import WheelZoomTool, HoverTool, Plot
+from bokeh.models import WheelZoomTool, HoverTool, Plot, PanTool
 from abu.UtilBu.ABuRegUtil import calc_regress_deg, regress_xy
 palettes_colors = d3["Category20"][20]
 
@@ -64,13 +64,14 @@ g_mark_color = {
     Offset.CLOSEYESTERDAY:colors.named.green
 }
 
-
+g_tools="pan,xwheel_zoom,ywheel_zoom,reset,wheel_zoom"
 
 class BacktesterApp:
+    
     wave_window = 0.0001
     tracker = {"bar_data":[], "trade_info":[], "ma_tag":[], "var":[], "var1":[], "var2":[], "ma_tag_ls":[]}
-    plot = figure(aspect_scale=0.3, match_aspect=False,plot_width=1100, plot_height=450,x_axis_label="date", y_axis_label="high", tools="")
-    plot_second = figure(output_backend="webgl", plot_width=1800, plot_height=200,x_axis_label="date", y_axis_label="high", tools="")
+    plot = figure(aspect_scale=0.3, match_aspect=False,plot_width=1100, plot_height=450,x_axis_label="date", y_axis_label="high", tools=g_tools)
+    plot_second = figure(output_backend="webgl", plot_width=1800, plot_height=200,x_axis_label="date", y_axis_label="high", tools=g_tools)
     def __init__(self):
         self.event_engine = EventEngine()
         self.main_engine = MainEngine(self.event_engine)
@@ -87,7 +88,7 @@ class BacktesterApp:
     
     def init_plot(self, aspect_scale=0.3, match_aspect=False,width=1100, height=450, TOOLTIPS=None):
         # tools="pan,tap,crosshair,reset,save,wheel_zoom,xwheel_zoom,ywheel_zoom"
-        self.plot = figure(aspect_scale=aspect_scale, output_backend="webgl", match_aspect=match_aspect,plot_width=width, plot_height=height,x_axis_label="date", y_axis_label="high", tooltips=TOOLTIPS, tools="")
+        self.plot = figure(aspect_scale=aspect_scale, output_backend="webgl", match_aspect=match_aspect,plot_width=width, plot_height=height,x_axis_label="date", y_axis_label="high", tooltips=TOOLTIPS, tools=g_tools)
         
     
     def start_algo(self, setting):
@@ -342,11 +343,22 @@ class BacktesterApp:
         self.plot_tarde_mark()
         self.plot.xaxis.major_label_overrides = self.date
         self.plot_second.xaxis.major_label_overrides = self.date
-        wheelzoomtool = WheelZoomTool()
-        self.plot.add_tools(wheelzoomtool)
-        self.plot_second.add_tools(wheelzoomtool)
-        plots_grid = gridplot([[self.plot],[self.plot_second]])
-        show(plots_grid)
+        # wheelzoomtool = WheelZoomTool()
+        # self.plot.add_tools(wheelzoomtool)
+        # self.plot_second.add_tools(wheelzoomtool)
+        # wheelzoomtool = WheelZoomTool(dimensions="width")
+        # self.plot.add_tools(wheelzoomtool)
+        # self.plot_second.add_tools(wheelzoomtool)
+        # wheelzoomtool = WheelZoomTool(dimensions="height")
+        # self.plot.add_tools(wheelzoomtool)
+        # self.plot_second.add_tools(wheelzoomtool)
+        # pantool = PanTool()
+        # self.plot.add_tools(pantool)
+        # self.plot_second.add_tools(pantool)
+    
+        # plots_grid = gridplot([[self.plot],[self.plot_second]])
+        # show(plots_grid)
+        show(self.plot)
 
 
 
@@ -356,7 +368,7 @@ if __name__ == "__main__":
     strategy_test = BacktesterApp()
     start_date = datetime.datetime(2019,8,2,20)
     end_date = datetime.datetime(2019,9,2,20)
-    stock = "pdd.SMART"
+    stock = "fb.SMART"
     algo_setting= {
         "vt_symbol": "",
         "direction": Direction.LONG.value,

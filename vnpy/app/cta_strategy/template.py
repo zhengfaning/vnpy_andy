@@ -3,7 +3,7 @@ from abc import ABC
 from copy import copy
 from typing import Any, Callable
 
-from vnpy.trader.constant import Interval, Direction, Offset
+from vnpy.trader.constant import Interval, Direction, Offset, OrderType
 from vnpy.trader.object import BarData, TickData, OrderData, TradeData
 from vnpy.trader.utility import virtual
 
@@ -151,29 +151,29 @@ class CtaTemplate(ABC):
         """
         pass
 
-    def buy(self, price: float, volume: float, stop: bool = False, lock: bool = False):
+    def buy(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT):
         """
         Send buy order to open a long position.
         """
-        return self.send_order(Direction.LONG, Offset.OPEN, price, volume, stop, lock)
+        return self.send_order(Direction.LONG, Offset.OPEN, price, volume, lock, type)
 
-    def sell(self, price: float, volume: float, stop: bool = False, lock: bool = False):
+    def sell(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT):
         """
         Send sell order to close a long position.
         """
-        return self.send_order(Direction.SHORT, Offset.CLOSE, price, volume, stop, lock)
+        return self.send_order(Direction.SHORT, Offset.CLOSE, price, volume, lock, type)
 
-    def short(self, price: float, volume: float, stop: bool = False, lock: bool = False):
+    def short(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT):
         """
         Send short order to open as short position.
         """
-        return self.send_order(Direction.SHORT, Offset.OPEN, price, volume, stop, lock)
+        return self.send_order(Direction.SHORT, Offset.OPEN, price, volume, lock, type)
 
-    def cover(self, price: float, volume: float, stop: bool = False, lock: bool = False):
+    def cover(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT):
         """
         Send cover order to close a short position.
         """
-        return self.send_order(Direction.LONG, Offset.CLOSE, price, volume, stop, lock)
+        return self.send_order(Direction.LONG, Offset.CLOSE, price, volume, lock, type)
 
     def send_order(
         self,
@@ -181,15 +181,15 @@ class CtaTemplate(ABC):
         offset: Offset,
         price: float,
         volume: float,
-        stop: bool = False,
-        lock: bool = False
+        lock: bool = False,
+        type: OrderType = OrderType.LIMIT,
     ):
         """
         Send a new order.
         """
         if self.trading:
             vt_orderids = self.cta_engine.send_order(
-                self, direction, offset, price, volume, stop, lock
+                self, direction, offset, price, volume, lock, type
             )
             return vt_orderids
         else:

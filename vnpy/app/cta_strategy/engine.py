@@ -461,8 +461,8 @@ class CtaEngine(BaseEngine):
         offset: Offset,
         price: float,
         volume: float,
-        stop: bool,
-        lock: bool
+        lock: bool,
+        type:OrderType = OrderType.LIMIT,
     ):
         """
         """
@@ -475,7 +475,7 @@ class CtaEngine(BaseEngine):
         price = round_to(price, contract.pricetick)
         volume = round_to(volume, contract.min_volume)
         
-        if stop:
+        if type == OrderType.STOP:
             if contract.stop_supported:
                 return self.send_server_stop_order(strategy, contract, direction, offset, price, volume, lock)
             else:
