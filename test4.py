@@ -21,6 +21,9 @@ from bokeh.layouts import column, gridplot
 from bokeh.models import WheelZoomTool
 palettes_colors = d3["Category20"][20]
 
+xx = np.array([])
+xx = np.append(xx, 1)
+xx = np.append(xx, 2)
 
 x = np.arange(3343, 3368)
 print(x)

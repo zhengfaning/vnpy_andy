@@ -3,6 +3,19 @@ import talib
 import math
 
 class Algorithm:
+    # @staticmethod
+    # def lm_kdj(df, n,ksgn='close'):
+    #     lowList= pd.rolling_min(df['low'], n)
+    #     lowList.fillna(value=pd.expanding_min(df['low']), inplace=True)
+    #     highList = pd.rolling_max(df['high'], n)
+    #     highList.fillna(value=pd.expanding_max(df['high']), inplace=True)
+    #     rsv = (df[ksgn] - lowList) / (highList - lowList) * 100
+    #     df['kdj_k'] = pd.ewma(rsv,com=2)
+    #     df['kdj_d'] = pd.ewma(df['kdj_k'],com=2)
+    #     df['kdj_j'] = 3.0 * df['kdj_k'] - 2.0 * df['kdj_d']
+    #     #print('n df',len(df))
+    #     return df
+
     @staticmethod
     def kdj(high_array, low_array, close_array, fastk_period=9, slowk_period=3, slowd_period=3):
         #计算kd指标
@@ -24,7 +37,7 @@ class Algorithm:
                 max_close[k]=high_array[k]
         # rsv = maxmin(data, fastk_period)
         diff = max_close - min_close
-
+        # diff = 1 if diff == 0 else diff
         fast_k = (close_array - min_close)/diff *100
         ppp = max_close - min_close
         for t in range(len(close_array)):

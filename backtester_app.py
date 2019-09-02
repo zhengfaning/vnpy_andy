@@ -38,7 +38,7 @@ from bokeh.io import curdoc
 from bokeh.palettes import d3, brewer, mpl
 from bokeh.core.enums import colors
 from bokeh.layouts import column, gridplot
-from bokeh.models import WheelZoomTool, HoverTool
+from bokeh.models import WheelZoomTool, HoverTool, Plot
 from abu.UtilBu.ABuRegUtil import calc_regress_deg, regress_xy
 palettes_colors = d3["Category20"][20]
 
@@ -69,7 +69,8 @@ g_mark_color = {
 class BacktesterApp:
     wave_window = 0.0001
     tracker = {"bar_data":[], "trade_info":[], "ma_tag":[], "var":[], "var1":[], "var2":[], "ma_tag_ls":[]}
-    plot = figure(aspect_scale=0.3, match_aspect=False,plot_width=1100, plot_height=450,x_axis_label="date", y_axis_label="high", tools="pan,reset,save,wheel_zoom,xwheel_zoom,ywheel_zoom")
+    plot = figure(aspect_scale=0.3, match_aspect=False,plot_width=1100, plot_height=450,x_axis_label="date", y_axis_label="high", tools="")
+    plot_second = figure(output_backend="webgl", plot_width=1800, plot_height=200,x_axis_label="date", y_axis_label="high", tools="")
     def __init__(self):
         self.event_engine = EventEngine()
         self.main_engine = MainEngine(self.event_engine)
@@ -85,8 +86,9 @@ class BacktesterApp:
         self.close = None
     
     def init_plot(self, aspect_scale=0.3, match_aspect=False,width=1100, height=450, TOOLTIPS=None):
-        self.plot = figure(aspect_scale=aspect_scale, output_backend="webgl", match_aspect=match_aspect,plot_width=width, plot_height=height,x_axis_label="date", y_axis_label="high", tooltips=TOOLTIPS,
-                tools="pan,tap,crosshair,reset,save,wheel_zoom,xwheel_zoom,ywheel_zoom")
+        # tools="pan,tap,crosshair,reset,save,wheel_zoom,xwheel_zoom,ywheel_zoom"
+        self.plot = figure(aspect_scale=aspect_scale, output_backend="webgl", match_aspect=match_aspect,plot_width=width, plot_height=height,x_axis_label="date", y_axis_label="high", tooltips=TOOLTIPS, tools="")
+        
     
     def start_algo(self, setting):
         self.algo_engine.start_algo(setting)
@@ -144,19 +146,19 @@ class BacktesterApp:
         bar_data = self.get_bar_data()
         self.date_index = {}
         self.close = []
-        date = {}
+        self.date = {}
         self.plot_index = []
         self.high = []
         self.low = []
         for i,v in enumerate(bar_data):
             bar:BarData = v
-            date[i] = bar.datetime.strftime("%m/%d %H:%M")
+            self.date[i] = bar.datetime.strftime("%m/%d %H:%M")
             self.date_index[bar.datetime] = i
             self.close.append(bar.close_price)
             self.high.append(bar.high_price)
             self.low.append(bar.low_price)
             self.plot_index.append(i)
-        self.plot.xaxis.major_label_overrides = date
+        
         
 
     def get_bar_data(self):
@@ -233,8 +235,21 @@ class BacktesterApp:
             self.plot.line(x=self.plot_index, y=ma_val, color=palettes_colors[c_i], legend="ma"+str(i))
             c_i += 1
 
+    def plot_kdj(self, ma_param_list = [5, 10, 30, 60, 120]):
+
+        close = np.array(self.close)
+        high = np.array(self.high)
+        low = np.array(self.low)
+        kdj_val = Algorithm.kdj(high, low, close)
+        self.plot_second.line(x=self.plot_index, y=kdj_val["k"], color=palettes_colors[0], legend="kdj")
+        self.plot_second.line(x=self.plot_index, y=kdj_val["d"], color=palettes_colors[2], legend="kdj")
+        self.plot_second.line(x=self.plot_index, y=kdj_val["j"], color=palettes_colors[3], legend="kdj")
+            
+
+            
+
     def plot_kline(self):
-        self.plot.line(x = self.plot_index, y = self.close, color=palettes_colors[0], line_width=1.5)
+        self.plot.line(x = self.plot_index, y = self.close, color=palettes_colors[0], line_width=1.5, legend="kline")
 
     def plot_trade_wave(self):
         dt_w = []
@@ -280,7 +295,7 @@ class BacktesterApp:
         ))
 
         TOOLTIPS = [
-            ("角度", "@deg"),
+            ("deg", "@deg"),
         ]
 
         hover = HoverTool(tooltips=TOOLTIPS)
@@ -323,8 +338,15 @@ class BacktesterApp:
         elif self.strategy == "Kdj120MaStrategy":
             # self.plot_wave()
             self.plot_trade_wave()
+        self.plot_kdj()
         self.plot_tarde_mark()
-        show(self.plot)
+        self.plot.xaxis.major_label_overrides = self.date
+        self.plot_second.xaxis.major_label_overrides = self.date
+        wheelzoomtool = WheelZoomTool()
+        self.plot.add_tools(wheelzoomtool)
+        self.plot_second.add_tools(wheelzoomtool)
+        plots_grid = gridplot([[self.plot],[self.plot_second]])
+        show(plots_grid)
 
 
 
@@ -332,9 +354,9 @@ class BacktesterApp:
 if __name__ == "__main__":
 
     strategy_test = BacktesterApp()
-    start_date = datetime.datetime(2019,7,20,20)
-    end_date = datetime.datetime(2019,8,27,20)
-    stock = "amd.SMART"
+    start_date = datetime.datetime(2019,8,2,20)
+    end_date = datetime.datetime(2019,9,2,20)
+    stock = "pdd.SMART"
     algo_setting= {
         "vt_symbol": "",
         "direction": Direction.LONG.value,
@@ -344,12 +366,12 @@ if __name__ == "__main__":
     }
     algo_setting["template_name"] = "ArbitrageAlgo"
     # strategy_test.start_algo(algo_setting)
-    # strategy_test.download("goog.SMART", start_date, end_date)
+    strategy_test.download(stock, start_date, end_date)
     strategy_test.start_backtester("MaLevelTrackStrategy", stock, start_date, end_date)
     # close = strategy_test.close
     # close = np.array(close)
     # calc_regress_deg(close)
-    strategy_test.init_plot(width=1800, height=800)
+    strategy_test.init_plot(width=1800, height=600)
     strategy_test.statistics()
     strategy_test.plot_kline()
     strategy_test.plot_ma_line([5, 10, 30, 60, 120])

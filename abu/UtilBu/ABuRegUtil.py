@@ -64,9 +64,9 @@ def regress_xy(x, y, mode=True, zoom=False, show=False):
             # 绘制x， 拟合的y
             plt.plot(x_plot, y_fit)
 
-        with plt_show():
-            # 再使用sns绘制，对比拟合结果
-            sns.regplot(x=x_plot, y=y)
+        # with plt_show():
+        #     # 再使用sns绘制，对比拟合结果
+        #     sns.regplot(x=x_plot, y=y)
     return model, y_fit
 
 
