@@ -34,9 +34,10 @@ class Poisition:
     # 形态预测出错修正,日后增设级别在3以上才执行
     last_close_info = None
     def __init__(self, strategy):
-        self.strategy:MaLevelTrackStrategy  = strategy
+        self.strategy:MaLevelTrackStrategyV2  = strategy
         # self.am = self.strategy.am
         self.ma_tag = self.strategy.ma_tag
+
 
     def buy(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.MARKET):
         """
@@ -155,7 +156,7 @@ class Poisition:
             
                 
 
-class MaLevelTrackStrategy(CtaTemplate):
+class MaLevelTrackStrategyV2(CtaTemplate):
     author = "用Python的交易员"
 
     ma_level = [10, 20, 30, 60, 120]
@@ -172,7 +173,7 @@ class MaLevelTrackStrategy(CtaTemplate):
 
     def __init__(self, cta_engine, strategy_name, vt_symbol, setting):
         """"""
-        super(MaLevelTrackStrategy, self).__init__(
+        super(MaLevelTrackStrategyV2, self).__init__(
             cta_engine, strategy_name, vt_symbol, setting
         )
         self.bg = BarGenerator(self.on_bar)
@@ -257,8 +258,7 @@ class MaLevelTrackStrategy(CtaTemplate):
         mean_val2 = np.mean(np.array(self.ma_tag[-10:-1]))
         mean_val3 = np.mean(np.array(self.ma_tag[-20:-1]))
         mean_val4 = np.mean(np.array(self.ma_tag[-30:-10]))
-        kdj_val = self.am.kdj()
-            # median_val = np.median(calc_nums)
+        # median_val = np.median(calc_nums)
         order_id = None
         if self.tracker is not None:
             deg1 = calc_regress_deg(self.am.close[offset : offset_m], False)
@@ -271,16 +271,15 @@ class MaLevelTrackStrategy(CtaTemplate):
                 std_10=round(std_val2,2), mean30_10=round(mean_val4,2), mean10=round(mean_val2,2)))
         if self.pos == 0:
             mean = mean_val4
-            if std_val2 < 0.2: 
-                if mean_val2 > 3:
-                    print("kdj=", kdj_val["k"][-5:],kdj_val["d"][-5:],kdj_val["j"][-5:])
+
+            if std_val2 < 0.2:
+                if mean_val2 > 2.5:
                     if mean_val2 >= (mean + 1):
                         is_order = True
                         self.tracker["trade_info"].append((
                             self.am.time_array[offset], self.am.time_array[offset_m], bar.datetime, deg1, deg2))
                         order_id = self.buy(bar.close_price, 1, type=OrderType.MARKET)
-                elif mean_val2 < 2:
-                    print("kdj=", kdj_val["k"][-5:],kdj_val["d"][-5:],kdj_val["j"][-5:])
+                elif mean_val2 < 2.5:
                     if mean_val2 <= (mean - 1):
                         is_order = True
                         self.tracker["trade_info"].append((

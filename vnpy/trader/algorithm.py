@@ -37,6 +37,7 @@ class Algorithm:
                 max_close[k]=high_array[k]
         # rsv = maxmin(data, fastk_period)
         diff = max_close - min_close
+        diff[diff == 0] = 1 
         # diff = 1 if diff == 0 else diff
         fast_k = (close_array - min_close)/diff *100
         ppp = max_close - min_close

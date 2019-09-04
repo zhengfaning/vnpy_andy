@@ -7,6 +7,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np 
 import talib
+from pytz import timezone
 # from vnpy.trader.utility import ArrayManager, BarGenerator
 from vnpy.app.cta_strategy import (
     TickData,
@@ -46,6 +47,10 @@ palettes_colors = d3["Category20"][20]
 # curdoc().theme = 'dark_minimal'
 # from bokeh.models import Arrow, OpenHead, NormalHead, VeeHead
 
+eastern = timezone('US/Eastern')
+
+def local_to_eastern(unix_time):
+    return datetime.datetime.fromtimestamp(unix_time, eastern)
 
 matplotlib.rcParams['font.sans-serif'] = ['SimHei'] 
 matplotlib.rcParams['font.family']='sans-serif'
@@ -153,7 +158,8 @@ class BacktesterApp:
         self.low = []
         for i,v in enumerate(bar_data):
             bar:BarData = v
-            self.date[i] = bar.datetime.strftime("%m/%d %H:%M")
+            t = local_to_eastern(bar.datetime.timestamp())
+            self.date[i] = t.strftime("%m/%d %H:%M")
             self.date_index[bar.datetime] = i
             self.close.append(bar.close_price)
             self.high.append(bar.high_price)
@@ -197,28 +203,46 @@ class BacktesterApp:
         tooltip_y = []
         tooltip_desc = []
         deg_desc = []
-
+        color_ls = []
+        dt=[]
         if "ma_tag_ls" not in self.tracker:
             return 
 
         for item in self.tracker["ma_tag_ls"]:
-            index = self.date_index[item[0]]
+            index = self.date_index[item["time"]]
             tooltip_x.append(int(index))
-            tooltip_y.append(item[1])
-            desc = "{}  {:.2f}  {:.2f} ".format(item[2], item[3], item[4])
+            tooltip_y.append(item["price"])
+            # desc = "m={} s={:.2f} s2={:.2f} ma={:.2f} ma2={:.2f}".format(item[2], item[3], item[8], item[4],item[9])
+            nitem=dict(item)
+            nitem.pop("time")
+            nitem.pop("price")
+            desc = str(nitem)
             tooltip_desc.append(desc)
-            deg_desc.append("{:.2f}  {:.2f}  {:.2f}".format(item[5], item[6], item[7]))
+            deg_desc.append("{:.2f}  {:.2f}  {:.2f}".format(item["deg1"], item["deg2"], item["deg_f"]))
+            t = local_to_eastern(item["time"].timestamp())
+            dt.append(t.strftime("%m/%d %H:%M:%S"))
+            c = palettes_colors[0]
+            if item["std_10"] < 0.1:
+                c = colors.named.red
+            elif item["mean10"] < 1:
+                c = colors.named.green
+            elif item["mean10"] > 4:
+                c = colors.named.gold
+            color_ls.append(c)
 
 
         source = ColumnDataSource(data=dict(
             x=tooltip_x,
             y=tooltip_y,
+            dt=dt,
             desc=tooltip_desc,
-            deg=deg_desc
+            deg=deg_desc,
+            color=color_ls
         ))
 
         TOOLTIPS = [
             ("index", "$index"),
+            ("time", "@dt"),
             ("price", "@y{0.00}"),
             ("desc", "@desc"),
             ("deg", "@deg"),
@@ -226,7 +250,7 @@ class BacktesterApp:
         hover = HoverTool(tooltips=TOOLTIPS)
         self.plot.add_tools(hover)
         # self.plot.tooltips = TOOLTIPS
-        self.plot.circle("x", "y", color=palettes_colors[0], size=7, source=source, legend="point desc")
+        self.plot.circle("x", "y", color='color', size=7, source=source, legend="point desc")
     
     def plot_ma_line(self, ma_param_list = [5, 10, 30, 60, 120]):
         c_i = 5
@@ -333,7 +357,7 @@ class BacktesterApp:
         self.plot.legend.location = "top_right"
         self.plot.legend.click_policy="hide"
         
-        if self.strategy == "MaLevelTrackStrategy":
+        if self.strategy.find("MaLevelTrackStrategy") != -1:
             self.plot_ma_tag()
             self.plot_trade_degline()
         elif self.strategy == "Kdj120MaStrategy":
@@ -367,8 +391,8 @@ if __name__ == "__main__":
 
     strategy_test = BacktesterApp()
     start_date = datetime.datetime(2019,8,2,20)
-    end_date = datetime.datetime(2019,9,2,20)
-    stock = "fb.SMART"
+    end_date = datetime.datetime(2019,9,3,20)
+    stock = "amd.SMART"
     algo_setting= {
         "vt_symbol": "",
         "direction": Direction.LONG.value,
@@ -383,10 +407,14 @@ if __name__ == "__main__":
     # close = strategy_test.close
     # close = np.array(close)
     # calc_regress_deg(close)
-    strategy_test.init_plot(width=1800, height=600)
+    width=1800
+    height=600
+    strategy_test.init_plot()
     strategy_test.statistics()
     strategy_test.plot_kline()
-    strategy_test.plot_ma_line([5, 10, 30, 60, 120])
+    ma_line = [10, 20, 30, 60, 120]
+    # ma_line = [5, 10, 30, 60, 120]
+    strategy_test.plot_ma_line(ma_line)
     strategy_test.show()
     # download3()
 
