@@ -402,14 +402,14 @@ if __name__ == "__main__":
     }
     algo_setting["template_name"] = "ArbitrageAlgo"
     # strategy_test.start_algo(algo_setting)
-    strategy_test.download(stock, start_date, end_date)
+    # strategy_test.download(stock, start_date, end_date)
     strategy_test.start_backtester("MaLevelTrackStrategy", stock, start_date, end_date)
     # close = strategy_test.close
     # close = np.array(close)
     # calc_regress_deg(close)
     width=1800
     height=600
-    strategy_test.init_plot()
+    strategy_test.init_plot(width=width, height=height)
     strategy_test.statistics()
     strategy_test.plot_kline()
     ma_line = [10, 20, 30, 60, 120]

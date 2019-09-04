@@ -14,6 +14,28 @@ from .constant import Exchange, Interval
 from .algorithm import Algorithm
 
 
+class IntervalGen:
+
+    data = []
+    temp_data = []
+    current = None
+    def __init__(self, process, interval):
+        self.process = process
+        self.interverl = interval
+    
+    def update(self, data):
+        if len(self.temp_data) < self.interverl:
+            self.temp_data.append(data)
+            self.current = self.process(self.temp_data)
+        else:
+            self.temp_data.append(data)
+            self.current = self.process(self.temp_data)
+            self.data.append(self.current * 1000)
+            self.temp_data = []
+        
+        return self.current * 1000
+
+
 def extract_vt_symbol(vt_symbol: str):
     """
     :return: (symbol, exchange)
@@ -286,6 +308,7 @@ class ArrayManager(object):
         self.close_array = np.zeros(size)
         self.volume_array = np.zeros(size)
         self.time_array = [1] * size
+        self.range_array = np.zeros(size)
         
     # def maxmin(data,fastk_period):
     #     close_prices = np.nan_to_num(np.array([v['close'] for v in data]))
@@ -344,6 +367,11 @@ class ArrayManager(object):
         self.close_array[-1] = bar.close_price
         self.volume_array[-1] = bar.volume
         self.time_array[-1] = bar.datetime
+        if self.count > 1:
+            self.range_array[:-1] = self.range_array[1:]
+            self.range_array[-1] = self.close_array[-1] / self.close_array[-2] - 1
+        else:
+            self.range_array[-1] = 0
     @property
     def open(self):
         """
@@ -357,6 +385,13 @@ class ArrayManager(object):
         Get high price time series.
         """
         return self.high_array
+
+    @property
+    def range(self):
+        """
+        Get low price time series.
+        """
+        return self.range_array
 
     @property
     def low(self):

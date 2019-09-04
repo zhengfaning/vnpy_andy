@@ -13,6 +13,7 @@ from functools import reduce
 from abu.UtilBu.ABuRegUtil import calc_regress_deg
 import abu.UtilBu.ABuRegUtil as reg_util
 from vnpy.trader.object import Status
+from vnpy.trader.utility import IntervalGen
 from vnpy.trader.constant import Direction, Exchange, Interval, Offset, Status, Product, OptionType, OrderType
 from dataclasses import dataclass, field
 from  enum import Enum
@@ -24,7 +25,7 @@ class ClosePosType(Enum):
 
 
 @dataclass
-class Poisition:
+class Position:
     volumn: int = 0
     level: int = 0
     close_price: float = 0.0
@@ -34,7 +35,7 @@ class Poisition:
     # 形态预测出错修正,日后增设级别在3以上才执行
     last_close_info = None
     def __init__(self, strategy):
-        self.strategy:MaLevelTrackStrategy  = strategy
+        self.strategy = strategy
         # self.am = self.strategy.am
         self.ma_tag = self.strategy.ma_tag
 
@@ -92,6 +93,7 @@ class Poisition:
                 # var_val = np.var(calc_nums)
         std_val = np.std(calc_nums)
         mean_val = np.mean(calc_nums)
+        
         if self.level == 1 and std_val < 0.8:
             # self.strategy.ma_tag[-1] > 3
             # level += 1
@@ -152,20 +154,22 @@ class Poisition:
             elif order.direction == Direction.NET:
                 self.volumn = order.volume
             
-            
-                
+ 
+
 
 class MaLevelTrackStrategy(CtaTemplate):
     author = "用Python的交易员"
 
     ma_level = [10, 20, 30, 60, 120]
     ma_tag = []
+    bd = []
     fast_ma0 = 0.0
     fast_ma1 = 0.0
 
     slow_ma0 = 0.0
     slow_ma1 = 0.0
     request_order = []
+    
     
     parameters = ["ma_level"]
     variables = ["fast_ma0", "fast_ma1", "slow_ma0", "slow_ma1"]
@@ -178,7 +182,10 @@ class MaLevelTrackStrategy(CtaTemplate):
         self.bg = BarGenerator(self.on_bar)
         self.am = ArrayManager(200)
         self.order_data = None
-        self.positions = Poisition(self)
+        self.positions = Position(self)
+        self.std_range = IntervalGen(np.std,5)
+                
+        
 
 
     def on_init(self):
@@ -244,31 +251,40 @@ class MaLevelTrackStrategy(CtaTemplate):
             self.ma_tag[-1] = tag_val
         if self.tracker is not None:
             self.tracker["bar_data"].append(bar)
+        self.std_range.update(self.am.range[-1])
+
         if not am.inited or not self.trading:
             return
-
+        
+        
         offset = -40
         offset_m = int(offset / 2)
         calc_nums = np.array(self.ma_tag[-offset:-1])
         # var_val = np.var(calc_nums)
         std_val = np.std(calc_nums)
         std_val2 = np.std(np.array(self.ma_tag[-10:-1]))
+        std_val3 = np.std(np.array(self.am.range[-30:-10]))
+        
         mean_val = np.mean(calc_nums)
         mean_val2 = np.mean(np.array(self.ma_tag[-10:-1]))
         mean_val3 = np.mean(np.array(self.ma_tag[-20:-1]))
         mean_val4 = np.mean(np.array(self.ma_tag[-30:-10]))
         kdj_val = self.am.kdj()
+
             # median_val = np.median(calc_nums)
         order_id = None
         if self.tracker is not None:
             deg1 = calc_regress_deg(self.am.close[offset : offset_m], False)
             deg2 = calc_regress_deg(self.am.close[offset_m :], False)
+            deg3 = calc_regress_deg(self.am.close[-5 :], False)
             deg_full = calc_regress_deg(self.am.close[offset :], False)
+            
             self.tracker["ma_tag_ls"].append(dict(
-                deg1=round(deg1,2), deg2=round(deg2,2), deg_f=round(deg_full,2),
+                deg1=round(deg1,2), deg2=round(deg2,2), deg_f=round(deg_full,2),deg3=round(deg3,2),
                 time=bar.datetime, price=bar.close_price, ma=round(tag_val, 2), 
                 std_40=round(std_val, 2),mean40=round(mean_val,2), 
-                std_10=round(std_val2,2), mean30_10=round(mean_val4,2), mean10=round(mean_val2,2)))
+                std_10=round(std_val2,2), mean30_10=round(mean_val4,2), mean10=round(mean_val2,2),
+                vol=self.am.volume[-1], range=self.std_range.data[-1:-5:-1]))
         if self.pos == 0:
             mean = mean_val4
             if std_val2 < 0.2: 
@@ -296,6 +312,7 @@ class MaLevelTrackStrategy(CtaTemplate):
         self.tracker["var"].append(np.var(np.array(self.ma_tag[-10:])))
         self.tracker["var1"].append(np.var(np.array(self.ma_tag[-5:])))
         self.tracker["var2"].append(np.var(np.array(self.ma_tag[-3:])))
+        
         self.put_event()
 
     # def init_order_data(self):
