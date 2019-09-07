@@ -14,10 +14,35 @@ from abu.UtilBu.ABuRegUtil import calc_regress_deg
 import abu.UtilBu.ABuRegUtil as reg_util
 from vnpy.trader.object import Status
 from vnpy.trader.utility import IntervalGen
-from vnpy.trader.constant import Direction, Exchange, Interval, Offset, Status, Product, OptionType, OrderType
+from vnpy.trader.constant import Direction, Exchange, Interval, Offset, Status, Product, OptionType, OrderType, KlinePattern
 from dataclasses import dataclass, field
 from  enum import Enum
 
+class PatternRecord:
+    record = {}
+    expiry = {}
+    def __init__(self):
+        pass
+
+    def add_pattern(self, pattern_list):
+        for item in pattern_list:
+            self.record[item] = 0
+
+    def set_expiry(self, pattern, count):
+        self.expiry[pattern] = count
+
+    def update(self):
+        discard = []
+        for i in self.record.keys():
+            self.record[i] += 1
+            if self.record[i] > self.expiry[i]:
+                discard.append(i)
+        
+        for item in discard:
+            self.record.pop(item)
+
+    def __contains__(self, item):
+	    return item in self.record
 
 class ClosePosType(Enum):
     SAFE_PRICE = 1
@@ -63,7 +88,7 @@ class Position:
         """
         return self.strategy.send_order(Direction.LONG, Offset.CLOSE, price, volume, lock, type)
 
-    def on_bar(self, bar:BarData):
+    def on_strategy(self, bar:BarData, calc_data):
         if self.volumn == 0:
             return
         
@@ -102,24 +127,27 @@ class Position:
             elif self.volumn < 0 and mean_val < 1.2:
                 self.level += 1
 
-        if self.level >= 2:
+        if self.level > 0:
             if len(self.order_data) > abs(offset * 1.5):
                 deg_full = calc_regress_deg(self.strategy.am.close[offset :], False)
                 y_fit = reg_util.regress_y_polynomial(self.order_data, zoom=True)
                 deg_order_short = calc_regress_deg(y_fit[:abs(offset)], False)
 
                 if self.volumn > 0:
-                    if deg_full < -0.05 and std_val < 1:
-                        if abs(deg_order_short) < abs(deg_full):
-                            order_id = self.strategy.sell(bar.close_price, 1, type=OrderType.MARKET)
-                elif self.volumn < 0:
-                    if deg_full > 0.05 and std_val < 1:
-                        if abs(deg_order_short) < abs(deg_full):
-                            order_id = self.strategy.cover(bar.close_price, 1, type=OrderType.MARKET)
+                    if deg_full < -0.00:
+                        # if abs(deg_order_short) < abs(deg_full):
+                            return self.strategy.sell(bar.close_price, 1, type=OrderType.MARKET)
 
-            print("pos<0", deg_order_short, deg_full)
+
+
+                elif self.volumn < 0:
+                    if deg_full > 0.0:
+                        # if abs(deg_order_short) < abs(deg_full):
+                            return self.strategy.cover(bar.close_price, 1, type=OrderType.MARKET)
+
+            # print("pos<0", deg_order_short, deg_full)
         
-        return order_id
+        return
             # # print(deg)
             # if abs(deg_order_short) < abs(deg_full):
             #     order_id = self.strategy.cover(bar.close_price, 1) 
@@ -135,7 +163,7 @@ class Position:
             # pre_volumn = 0
             if order.direction == Direction.LONG:
                 if self.volumn == 0:
-                    self.close_price = round(order.price * 0.995, 2)
+                    self.close_price = round(order.price * 0.998, 2)
                     self.safe_price = order.price * 1.005
                     self.price = order.price
                     self.order_data = np.array([])
@@ -144,7 +172,7 @@ class Position:
                 
             elif order.direction == Direction.SHORT:
                 if self.volumn == 0:
-                    self.close_price = round(order.price * 1.005, 2)
+                    self.close_price = round(order.price * 1.002, 2)
                     self.order_data = np.array([])
                     self.price = order.price
                     self.safe_price = order.price * 0.995
@@ -155,8 +183,13 @@ class Position:
                 self.volumn = order.volume
             
  
-
-
+''' 
+    TODO: 加入每日时间识别
+    TODO: 加入红绿十字星识别
+    TODO: 加入十字星后,快速趋势判断购买
+    TODO: 加入高吊线和低线识别
+    TODO: 策略架构改进,多个策略并存
+'''
 class MaLevelTrackStrategy(CtaTemplate):
     author = "用Python的交易员"
 
@@ -169,6 +202,7 @@ class MaLevelTrackStrategy(CtaTemplate):
     slow_ma0 = 0.0
     slow_ma1 = 0.0
     request_order = []
+    bar_identify = []
     
     
     parameters = ["ma_level"]
@@ -180,13 +214,20 @@ class MaLevelTrackStrategy(CtaTemplate):
             cta_engine, strategy_name, vt_symbol, setting
         )
         self.bg = BarGenerator(self.on_bar)
-        self.am = ArrayManager(200)
+        self.am = ArrayManager(400)
+        self.am3 = ArrayManager(150)
+        self.bg3 = BarGenerator(self.on_bar, 3, self.on_3min_bar)
+        self.am5 = ArrayManager(100)
+        self.bg5 = BarGenerator(self.on_bar, 5, self.on_5min_bar)
         self.order_data = None
         self.positions = Position(self)
         self.std_range = IntervalGen(np.std,5)
-                
-        
-
+        self.std_range3 = IntervalGen(np.std,5)        
+        self.std_range5 = IntervalGen(np.std,5)
+        self.pattern_record = PatternRecord()
+        self.pattern_record.set_expiry(KlinePattern.CDLEVENINGSTAR, 5)
+        self.open_strategy = [self.open1, self.open2]
+        self.offset = 40
 
     def on_init(self):
         """
@@ -215,12 +256,156 @@ class MaLevelTrackStrategy(CtaTemplate):
         Callback of new tick data update.
         """
         self.bg.update_tick(tick)
+        self.bg3.update_tick(tick)
+        self.bg5.update_tick(tick)
+
+    def on_3min_bar(self, bar: BarData):
+        self.am3.update_bar(bar)
+        self.std_range3.update(self.am3.range[-1])
+    
+    def mode_identify(self, bar: BarData):
+        self.bar_identify = []
+        hl_scale = round(bar.high_price / bar.low_price - 1, 4)
+        if hl_scale > 0.001:
+            diff = bar.high_price - bar.low_price
+            diff_up = bar.low_price + diff / 2 * 1.20
+            diff_down = bar.low_price + diff / 2 * 0.80 
+            close = bar.close_price
+            if bar.open_price < diff_up and bar.open_price > diff_down and \
+               bar.close_price < diff_up and bar.close_price > diff_down:
+                if bar.close_price > bar.open_price:
+                    print("绿十字星",bar.datetime, bar.high_price,bar.low_price,diff,diff_up,diff_down, bar.open_price, bar.close_price)
+                else:
+                    print("红十字星",bar.datetime, bar.high_price,bar.low_price,diff,diff_up,diff_down, bar.open_price, bar.close_price)
+        
+
+    def on_5min_bar(self, bar: BarData):
+        self.am5.update_bar(bar)   
+        self.std_range5.update(self.am5.range[-1])
+        pattern = self.am5.pattern([KlinePattern.CDLEVENINGSTAR])
+        if len(pattern) > 0:
+            print(pattern)
+            self.pattern_record.add_pattern(pattern)
+            deg_full = calc_regress_deg(self.am.close[-40 :])
+        
+        self.pattern_record.update()
+    def open_v3(self, bar:BarData):
+        std_val2 = np.std(np.array(self.ma_tag[-10:-1]))
+        mean_val2 = np.mean(np.array(self.ma_tag[-10:-1]))
+        mean = np.mean(np.array(self.ma_tag[-30:-10]))
+
+        if std_val2 < 0.2: 
+            if mean_val2 > 3:
+                if mean_val2 >= (mean + 1):
+                    return self.buy(bar.close_price, 1, type=OrderType.MARKET)
+            elif mean_val2 < 2:
+                if mean_val2 <= (mean - 1):
+                    return self.short(bar.close_price, 1, type=OrderType.MARKET)
+
+    def open_v1(self, bar:BarData):
+        offset = -40
+        offset_m = int(offset / 2)
+        calc_nums = np.array(self.ma_tag[-offset:-1])
+        mean_val = np.mean(calc_nums)
+        # var_val = np.var(calc_nums)
+        std_val = np.std(calc_nums)
+        if std_val < 1 and mean_val < 2 and self.ma_tag[-1] >= (mean_val + 2):
+            return self.buy(bar.close_price, 1, type=OrderType.MARKET)
+        elif std_val < 1 and mean_val > 3 and self.ma_tag[-1] <= (mean_val - 2):
+            return self.short(bar.close_price, 1, type=OrderType.MARKET)
+    
+    def open_v2(self, bar:BarData):
+        std_val2 = np.std(np.array(self.ma_tag[-10:-1]))
+        mean_val2 = np.mean(np.array(self.ma_tag[-10:-1]))
+        mean = np.mean(np.array(self.ma_tag[-30:-10]))
+
+        if std_val2 < 0.2:
+            if mean_val2 > 2.5:
+                if mean_val2 >= (mean + 1):
+                    return self.buy(bar.close_price, 1, type=OrderType.MARKET)
+            elif mean_val2 < 2.5:
+                if mean_val2 <= (mean - 1):
+                    return self.short(bar.close_price, 1, type=OrderType.MARKET)
+
+    
+    def open2(self, bar:BarData, calc_data):
+        deg = calc_data["deg20"]
+        ma = self.ma_tag[-1]
+        if deg > 0.5 and ma > 3 and self.am5.range[-1] > -0.002:
+            return self.buy(bar.close_price, 1, type=OrderType.MARKET)
+        elif deg < -0.5 and ma < 2 and self.am5.range[-1] < 0.002:
+            return self.short(bar.close_price, 1, type=OrderType.MARKET)  
+
+    def open1(self, bar:BarData, calc_data):
+        
+        mean = calc_data["mean30_10"]
+        mean_val2 = calc_data["mean10"]
+        # if std_val2 < 0.2: 
+        if mean_val2 > 3.5 and mean_val2 >= (mean + 2):
+                return self.buy(bar.close_price, 1, type=OrderType.MARKET)
+        elif mean_val2 < 1.5 and mean_val2 <= (mean - 2):
+                return self.short(bar.close_price, 1, type=OrderType.MARKET)
+       
+    def generate_data(self, bar:BarData):
+        offset = -self.offset
+        offset_m = int(offset / 2)
+        calc_nums = np.array(self.ma_tag[-offset:-1])
+        # var_val = np.var(calc_nums)
+        std_val = np.std(calc_nums)
+        std_val2 = np.std(np.array(self.ma_tag[-10:-1]))
+        std_val3 = np.std(np.array(self.am.range[-30:-10]))
+        ma = self.ma_tag[-1]
+        
+        mean_val = np.mean(calc_nums)
+        mean_val2 = np.mean(np.array(self.ma_tag[-5:-1]))
+        mean_val3 = np.mean(np.array(self.ma_tag[-20:-1]))
+        mean_val4 = np.mean(np.array(self.ma_tag[-30:-5]))
+        kdj_val = self.am.kdj()
+
+        deg1 = calc_regress_deg(self.am.close[offset : offset_m], False)
+        deg2 = calc_regress_deg(self.am.close[offset_m :], False)
+        deg3 = calc_regress_deg(self.am.close[-10 :], False)
+        deg_full = calc_regress_deg(self.am.close[offset :], False)
+
+        calc_data = (dict(
+                kdj=[round(kdj_val["k"][-1],2),round(kdj_val["d"][-1],2),round(kdj_val["j"][-1],2)],
+                deg40_20=round(deg1,2), deg20=round(deg2,2), deg10=round(deg3,2),deg_f=round(deg_full,2),
+                time=bar.datetime, price=bar.close_price, ma=round(ma, 2), 
+                std_40=round(std_val, 2),mean40=round(mean_val,2), 
+                std_10=round(std_val2,2), mean30_10=round(mean_val4,2), mean10=round(mean_val2,2),
+                vol=self.am.volume[-1], range=self.std_range.data[-1:-5:-1]))
+
+        return calc_data
+
+    def on_strategy(self, bar: BarData):
+        calc_data = self.generate_data(bar)
+            
+        order_id = None
+        if self.pos == 0:
+            for open_strategy in self.open_strategy:
+                if order_id is not None:
+                    break
+                order_id = open_strategy(bar, calc_data)
+        else:
+            order_id = self.positions.on_strategy(bar, calc_data)
+
+        
+        if order_id is not None:
+            offset = -self.offset
+            offset_m = int(offset / 2)
+            self.tracker["trade_info"].append((
+                        self.am.time_array[offset], self.am.time_array[offset_m], bar.datetime, calc_data["deg40_20"], calc_data["deg20"]))
+            self.request_order.extend(order_id)
+        
+        if self.tracker is not None:
+            self.tracker["ma_tag_ls"].append(calc_data)
 
     def on_bar(self, bar: BarData):
         """
         Callback of new bar data update.
         """
-
+        self.bg3.update_bar(bar)
+        self.bg5.update_bar(bar)
         am = self.am
         am.update_bar(bar)
         max_len = self.ma_level[-1] + 20
@@ -253,65 +438,15 @@ class MaLevelTrackStrategy(CtaTemplate):
             self.tracker["bar_data"].append(bar)
         self.std_range.update(self.am.range[-1])
 
+                
+
         if not am.inited or not self.trading:
             return
         
         
-        offset = -40
-        offset_m = int(offset / 2)
-        calc_nums = np.array(self.ma_tag[-offset:-1])
-        # var_val = np.var(calc_nums)
-        std_val = np.std(calc_nums)
-        std_val2 = np.std(np.array(self.ma_tag[-10:-1]))
-        std_val3 = np.std(np.array(self.am.range[-30:-10]))
         
-        mean_val = np.mean(calc_nums)
-        mean_val2 = np.mean(np.array(self.ma_tag[-10:-1]))
-        mean_val3 = np.mean(np.array(self.ma_tag[-20:-1]))
-        mean_val4 = np.mean(np.array(self.ma_tag[-30:-10]))
-        kdj_val = self.am.kdj()
-
+        self.on_strategy(bar)
             # median_val = np.median(calc_nums)
-        order_id = None
-        if self.tracker is not None:
-            deg1 = calc_regress_deg(self.am.close[offset : offset_m], False)
-            deg2 = calc_regress_deg(self.am.close[offset_m :], False)
-            deg3 = calc_regress_deg(self.am.close[-5 :], False)
-            deg_full = calc_regress_deg(self.am.close[offset :], False)
-            
-            self.tracker["ma_tag_ls"].append(dict(
-                deg1=round(deg1,2), deg2=round(deg2,2), deg_f=round(deg_full,2),deg3=round(deg3,2),
-                time=bar.datetime, price=bar.close_price, ma=round(tag_val, 2), 
-                std_40=round(std_val, 2),mean40=round(mean_val,2), 
-                std_10=round(std_val2,2), mean30_10=round(mean_val4,2), mean10=round(mean_val2,2),
-                vol=self.am.volume[-1], range=self.std_range.data[-1:-5:-1]))
-        if self.pos == 0:
-            mean = mean_val4
-            if std_val2 < 0.2: 
-                if mean_val2 > 3:
-                    print("kdj=", kdj_val["k"][-5:],kdj_val["d"][-5:],kdj_val["j"][-5:])
-                    if mean_val2 >= (mean + 1):
-                        is_order = True
-                        self.tracker["trade_info"].append((
-                            self.am.time_array[offset], self.am.time_array[offset_m], bar.datetime, deg1, deg2))
-                        order_id = self.buy(bar.close_price, 1, type=OrderType.MARKET)
-                elif mean_val2 < 2:
-                    print("kdj=", kdj_val["k"][-5:],kdj_val["d"][-5:],kdj_val["j"][-5:])
-                    if mean_val2 <= (mean - 1):
-                        is_order = True
-                        self.tracker["trade_info"].append((
-                            self.am.time_array[offset], self.am.time_array[offset_m], bar.datetime, deg1, deg2))
-                        order_id = self.short(bar.close_price, 1, type=OrderType.MARKET)
-        else:
-            order_id = self.positions.on_bar(bar)
-           
-        if order_id is not None:
-            self.request_order.extend(order_id)
-
-        self.tracker["ma_tag"].append(self.ma_tag[-10:])
-        self.tracker["var"].append(np.var(np.array(self.ma_tag[-10:])))
-        self.tracker["var1"].append(np.var(np.array(self.ma_tag[-5:])))
-        self.tracker["var2"].append(np.var(np.array(self.ma_tag[-3:])))
         
         self.put_event()
 

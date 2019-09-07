@@ -19,6 +19,12 @@ from bokeh.palettes import d3, brewer, mpl
 from bokeh.core.enums import colors
 from bokeh.layouts import column, gridplot
 from bokeh.models import WheelZoomTool
+from talib import abstract
+import talib
+
+print(talib.get_functions())
+print(talib.get_function_groups())
+
 palettes_colors = d3["Category20"][20]
 
 xx = np.array([])
@@ -43,6 +49,8 @@ date = {}
 plot_index = []
 high = []
 low = []
+open = []
+vol = []
 for i,v in enumerate(bar_data):
     bar:BarData = v
     date[i] = bar.datetime.strftime("%m/%d %H:%M")
@@ -51,6 +59,27 @@ for i,v in enumerate(bar_data):
     high.append(bar.high_price)
     low.append(bar.low_price)
     plot_index.append(i)
+    open.append(bar.open_price)
+    vol.append(bar.volume)
+
+inputs = {
+    'open': np.array(open),
+    'high': np.array(high),
+    'low': np.array(low),
+    'close': np.array(close),
+    'volume': np.array(vol)
+}
+inputs2 = {
+    'open': np.array(open[1112:1126]),
+    'high': np.array(high[1112:1126]),
+    'low': np.array(low[1112:1126]),
+    'close': np.array(close[1112:1126]),
+    'volume': np.array(vol[1112:1126])
+}
+func = abstract.Function("CDLEVENINGSTAR")
+result = func(inputs2)
+x = np.where(result != 0)
+print(x)
 
 
 

@@ -44,7 +44,7 @@ from abu.UtilBu.ABuRegUtil import calc_regress_deg, regress_xy
 palettes_colors = d3["Category20"][20]
 
 # output_file("dark_minimal.html")
-# curdoc().theme = 'dark_minimal'
+curdoc().theme = 'dark_minimal'
 # from bokeh.models import Arrow, OpenHead, NormalHead, VeeHead
 
 eastern = timezone('US/Eastern')
@@ -63,8 +63,8 @@ g_plot_mark = {
 }
 
 g_mark_color = {
-    Offset.OPEN:colors.named.red,
-    Offset.CLOSE:colors.named.green,
+    Offset.OPEN:"#FF0000",
+    Offset.CLOSE:"#008000",
     Offset.CLOSETODAY:colors.named.green,
     Offset.CLOSEYESTERDAY:colors.named.green
 }
@@ -218,7 +218,7 @@ class BacktesterApp:
             nitem.pop("price")
             desc = str(nitem)
             tooltip_desc.append(desc)
-            deg_desc.append("{:.2f}  {:.2f}  {:.2f}".format(item["deg1"], item["deg2"], item["deg_f"]))
+            deg_desc.append("{:.2f}  {:.2f}  {:.2f}".format(item["deg40_20"], item["deg20"], item["deg_f"]))
             t = local_to_eastern(item["time"].timestamp())
             dt.append(t.strftime("%m/%d %H:%M:%S"))
             c = palettes_colors[0]
@@ -240,13 +240,32 @@ class BacktesterApp:
             color=color_ls
         ))
 
-        TOOLTIPS = [
-            ("index", "$index"),
-            ("time", "@dt"),
-            ("price", "@y{0.00}"),
-            ("desc", "@desc"),
-            ("deg", "@deg"),
-        ]
+        # TOOLTIPS = [
+        #     ("index", "$index"),
+        #     ("time", "@dt"),
+        #     ("price", "@y{0.00}"),
+        #     ("desc", "@desc"),
+        #     ("deg", "@deg"),
+        # ]
+        TOOLTIPS = """
+            <div style="width:300px">
+                <div>
+                    <span>index:[$index]</span>
+                </div>
+                <div>
+                    <span>time:@dt</span>
+                </div>
+                <div>
+                    <span>price:@y{0.00}</span>
+                </div>
+                <div>
+                    <span>desc:@desc</span>
+                </div>
+                <div>
+                    <span>deg:@deg</span>
+                </div>
+            </div>
+        """
         hover = HoverTool(tooltips=TOOLTIPS)
         self.plot.add_tools(hover)
         # self.plot.tooltips = TOOLTIPS
@@ -325,12 +344,13 @@ class BacktesterApp:
 
         hover = HoverTool(tooltips=TOOLTIPS)
         self.plot.add_tools(hover)
-        self.plot.multi_line("xs", "ys", color=colors.named.black, source=source, legend="degline")
-        self.plot.multi_line(xs=dt_index_full, ys=y_fit_full, color=colors.named.yellow, legend="degline_full")
+        self.plot.multi_line("xs", "ys", color=colors.named.yellowgreen, source=source, legend="degline")
+        self.plot.multi_line(xs=dt_index_full, ys=y_fit_full, color=colors.named.goldenrod, legend="degline_full")
         
 
     def plot_tarde_mark(self):
         result_df = self.backtester_engine.get_result_df()
+        marks_data = dict(x=[],y=[],c=[],angle=[])
         if result_df is not None:
             for trade_list in result_df.trades:
                 for item in trade_list:
@@ -346,12 +366,17 @@ class BacktesterApp:
                     offset:Offset = item.offset
                     # mark = g_plot_mark[direction]
                     color = g_mark_color[offset]
-                    if direction == Direction.LONG:
-                        self.plot.triangle(x=p, y=price, color=color, size=10)
-                    else:
-                        self.plot.inverted_triangle(x=p, y=price, color=color, size=10)
-                    text = Label(x=p, y=price, text="{}".format(price), x_offset = 6, y_offset=-7)
+
+                    marks_data["x"].append(p)
+                    marks_data["y"].append(price)
+                    marks_data["c"].append(color)
+                    marks_data["angle"].append(0 if direction == Direction.LONG else 45)
+                        # self.plot.inverted_triangle(x=p, y=price, color=color, size=10)
+                        # short_mark.append((p, price, color))
+                    text = Label(x=p, y=price, text="{}".format(price), x_offset = 6, y_offset=-7, text_color="white")
                     self.plot.add_layout(text)
+            self.plot.triangle(x=marks_data["x"], y=marks_data["y"], color=marks_data["c"], angle=marks_data["angle"], size=10)
+            # self.plot.inverted_triangle(x=short_mark["x"], y=short_mark["y"], fill_color=short_mark["y"], size=10)
     
     def show(self):
         self.plot.legend.location = "top_right"
@@ -391,8 +416,8 @@ if __name__ == "__main__":
 
     strategy_test = BacktesterApp()
     start_date = datetime.datetime(2019,8,2,20)
-    end_date = datetime.datetime(2019,9,3,20)
-    stock = "amd.SMART"
+    end_date = datetime.datetime(2019,9,6,20)
+    stock = "fb.SMART"
     algo_setting= {
         "vt_symbol": "",
         "direction": Direction.LONG.value,
@@ -409,7 +434,8 @@ if __name__ == "__main__":
     # calc_regress_deg(close)
     width=1800
     height=600
-    strategy_test.init_plot(width=width, height=height)
+    # strategy_test.init_plot(width=width, height=height)
+    strategy_test.init_plot()
     strategy_test.statistics()
     strategy_test.plot_kline()
     ma_line = [10, 20, 30, 60, 120]

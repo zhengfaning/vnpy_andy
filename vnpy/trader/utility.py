@@ -10,9 +10,10 @@ import numpy as np
 import talib
 
 from .object import BarData, TickData
-from .constant import Exchange, Interval
+from .constant import Exchange, Interval, KlinePattern
 from .algorithm import Algorithm
-
+from talib import abstract
+from typing import List
 
 class IntervalGen:
 
@@ -309,6 +310,10 @@ class ArrayManager(object):
         self.volume_array = np.zeros(size)
         self.time_array = [1] * size
         self.range_array = np.zeros(size)
+        self.extra_array = []
+        for i in range(size):
+            self.extra_array.append({"pattern":[]})
+        
         
     # def maxmin(data,fastk_period):
     #     close_prices = np.nan_to_num(np.array([v['close'] for v in data]))
@@ -334,7 +339,29 @@ class ArrayManager(object):
     #         'min': min_close
     #     }
     #     return indicators
+    def pattern(self, pattern_tags, start = -20):
 
+        inputs = {
+            'open': self.open_array[start:],
+            'high': self.high_array[start:],
+            'low': self.low_array[start:],
+            'close': self.close_array[start:],
+            'volume': self.volume_array[start:]
+        }
+
+        result = []
+        for tag in pattern_tags:
+            func = abstract.Function(tag.value)
+            r = func(inputs)
+            w_r = np.where(r != 0)
+            if len(w_r) > 0 and w_r[0].size > 0:
+                for i in w_r[0]:
+                    index = i + start
+                    if tag not in self.extra_array[index]["pattern"]:
+                        self.extra_array[index]["pattern"].append(tag)
+                        result.append(tag)
+                            
+        return result
 
     def wave(self, window = 0.0003):
 
@@ -360,6 +387,7 @@ class ArrayManager(object):
         self.close_array[:-1] = self.close_array[1:]
         self.volume_array[:-1] = self.volume_array[1:]
         self.time_array[:-1] = self.time_array[1:]
+        self.extra_array[:-1] = self.extra_array[1:]
 
         self.open_array[-1] = bar.open_price
         self.high_array[-1] = bar.high_price
@@ -367,9 +395,10 @@ class ArrayManager(object):
         self.close_array[-1] = bar.close_price
         self.volume_array[-1] = bar.volume
         self.time_array[-1] = bar.datetime
+        self.extra_array[-1] = {"pattern":[]}
         if self.count > 1:
             self.range_array[:-1] = self.range_array[1:]
-            self.range_array[-1] = self.close_array[-1] / self.close_array[-2] - 1
+            self.range_array[-1] = round(self.close_array[-1] / self.close_array[-2] - 1, 6)
         else:
             self.range_array[-1] = 0
     @property
