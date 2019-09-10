@@ -311,6 +311,7 @@ class ArrayManager(object):
         self.time_array = [1] * size
         self.range_array = np.zeros(size)
         self.extra_array = []
+        self.pattern_init = False
         for i in range(size):
             self.extra_array.append({"pattern":[]})
         
@@ -359,8 +360,13 @@ class ArrayManager(object):
                     index = i + start
                     if tag not in self.extra_array[index]["pattern"]:
                         self.extra_array[index]["pattern"].append(tag)
-                        result.append(tag)
-                            
+                        result.append((tag,r[i]))
+
+        # 第一次调用返回空列表
+        if not self.pattern_init:
+            self.pattern_init = True
+            return []
+                                 
         return result
 
     def wave(self, window = 0.0003):
@@ -388,6 +394,7 @@ class ArrayManager(object):
         self.volume_array[:-1] = self.volume_array[1:]
         self.time_array[:-1] = self.time_array[1:]
         self.extra_array[:-1] = self.extra_array[1:]
+        self.range_array[:-1] = self.range_array[1:]
 
         self.open_array[-1] = bar.open_price
         self.high_array[-1] = bar.high_price
@@ -401,6 +408,8 @@ class ArrayManager(object):
             self.range_array[-1] = round(self.close_array[-1] / self.close_array[-2] - 1, 6)
         else:
             self.range_array[-1] = 0
+
+
     @property
     def open(self):
         """
@@ -443,20 +452,27 @@ class ArrayManager(object):
         """
         return self.volume_array
 
-    def sma(self, n, array=False):
+    def sma(self, n, array=False, length=None):
         """
         Simple moving average.
         """
-        result = talib.SMA(self.close, n)
+        if length is not None:
+            result = talib.SMA(self.close[-length:], n)
+        else:
+            result = talib.SMA(self.close, n)
         if array:
             return result
         return result[-1]
 
-    def std(self, n, array=False):
+    def std(self, n, array=False, length=None):
         """
         Standard deviation
         """
-        result = talib.STDDEV(self.close, n)
+        if length is not None:
+            result = talib.STDDEV(self.close[-length:], n)
+        else:
+            result = talib.STDDEV(self.close, n)
+
         if array:
             return result
         return result[-1]
@@ -470,11 +486,14 @@ class ArrayManager(object):
             return result
         return result[-1]
 
-    def atr(self, n, array=False):
+    def atr(self, n, array=False, length=None):
         """
         Average True Range (ATR).
         """
-        result = talib.ATR(self.high, self.low, self.close, n)
+        if length is not None:
+            result = talib.ATR(self.high[-length:], self.low[-length:], self.close[-length:], n)
+        else:
+            result = talib.ATR(self.high, self.low, self.close, n)
         if array:
             return result
         return result[-1]
@@ -488,13 +507,18 @@ class ArrayManager(object):
             return result
         return result[-1]
 
-    def macd(self, fast_period, slow_period, signal_period, array=False):
+    def macd(self, fast_period, slow_period, signal_period, array=False, length=None):
         """
         MACD.
         """
-        macd, signal, hist = talib.MACD(
-            self.close, fast_period, slow_period, signal_period
-        )
+        if length is not None:
+            macd, signal, hist = talib.MACD(
+                self.close[-length:], fast_period, slow_period, signal_period
+            )
+        else:
+            macd, signal, hist = talib.MACD(
+                self.close, fast_period, slow_period, signal_period
+            )       
         if array:
             return macd, signal, hist
         return macd[-1], signal[-1], hist[-1]
@@ -508,12 +532,16 @@ class ArrayManager(object):
             return result
         return result[-1]
 
-    def boll(self, n, dev, array=False):
+    def boll(self, n, dev, array=False, length=None):
         """
         Bollinger Channel.
         """
-        mid = self.sma(n, array)
-        std = self.std(n, array)
+        if length is not None:
+            mid = self.sma(n, array, length=length)
+            std = self.std(n, array, length=length)
+        else:
+            mid = self.sma(n, array)
+            std = self.std(n, array)            
 
         up = mid + std * dev
         down = mid - std * dev

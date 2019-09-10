@@ -5,5 +5,9 @@ from itertools import accumulate
 import operator
 import sys
 
-a = [2, 2, 1, 1, 1,2,2,2,2] 
-print(np.cov(a), np.std(a), np.var(a))
+d1 = datetime.datetime(2013, 8, 5,15,50)
+d2 = datetime.datetime(2013, 8, 4,21,9)
+r = d1 - d2
+r.total_seconds()
+print(type(r))
+print(r)

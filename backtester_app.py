@@ -342,8 +342,8 @@ class BacktesterApp:
             ("deg", "@deg"),
         ]
 
-        hover = HoverTool(tooltips=TOOLTIPS)
-        self.plot.add_tools(hover)
+        # hover = HoverTool(tooltips=TOOLTIPS)
+        # self.plot.add_tools(hover)
         self.plot.multi_line("xs", "ys", color=colors.named.yellowgreen, source=source, legend="degline")
         self.plot.multi_line(xs=dt_index_full, ys=y_fit_full, color=colors.named.goldenrod, legend="degline_full")
         
@@ -382,7 +382,8 @@ class BacktesterApp:
         self.plot.legend.location = "top_right"
         self.plot.legend.click_policy="hide"
         
-        if self.strategy.find("MaLevelTrackStrategy") != -1:
+        if self.strategy.find("MaLevelTrackStrategy") != -1 or \
+           self.strategy.find("PatternScoreStrategy") != -1:
             self.plot_ma_tag()
             self.plot_trade_degline()
         elif self.strategy == "Kdj120MaStrategy":
@@ -416,8 +417,8 @@ if __name__ == "__main__":
 
     strategy_test = BacktesterApp()
     start_date = datetime.datetime(2019,8,2,20)
-    end_date = datetime.datetime(2019,9,6,20)
-    stock = "fb.SMART"
+    end_date = datetime.datetime(2019,9,8,20)
+    stock = "pdd.SMART"
     algo_setting= {
         "vt_symbol": "",
         "direction": Direction.LONG.value,
@@ -428,7 +429,9 @@ if __name__ == "__main__":
     algo_setting["template_name"] = "ArbitrageAlgo"
     # strategy_test.start_algo(algo_setting)
     # strategy_test.download(stock, start_date, end_date)
-    strategy_test.start_backtester("MaLevelTrackStrategy", stock, start_date, end_date)
+    strategy_list = ["MaLevelTrackStrategy", "PatternScoreStrategy"]
+
+    strategy_test.start_backtester(strategy_list[1], stock, start_date, end_date)
     # close = strategy_test.close
     # close = np.array(close)
     # calc_regress_deg(close)
