@@ -105,15 +105,13 @@ class Position:
     def close1(self, bar:BarData, calc_data):
         if self.volumn < 0:
             if bar.close_price > self.close_price:
-                return self.strategy.cover(self.close_price, 1, type=OrderType.MARKET), \
-                       "平仓:到达最低价{}".format(self.close_price)
+                return self.strategy.cover(self.close_price, 1, type=OrderType.MARKET,
+                       extra= { "reason":"平仓:到达最低价{}".format(self.close_price)})
                  
         elif self.volumn > 0:
             if bar.close_price < self.close_price:
-                return self.strategy.sell(self.close_price, 1, type=OrderType.MARKET), \
-                       "平仓:到达最低价{}".format(self.close_price)
-        
-        return None, None
+                return self.strategy.sell(self.close_price, 1, type=OrderType.MARKET,
+                       extra={"reason": "平仓:到达最低价{}".format(self.close_price)})
 
     
     def close2(self, bar:BarData, calc_data):
@@ -134,22 +132,22 @@ class Position:
             if self.volumn > 0:
                 if deg_full < -0.01:
                     # if abs(deg_order_short) < abs(deg_full):
-                        return self.strategy.sell(bar.close_price, 1, type=OrderType.MARKET), "平仓:趋势趋弱,deg={}".format(deg_full)
-
+                        return self.strategy.sell(bar.close_price, 1, type=OrderType.MARKET, 
+                                extra={"reason":"平仓:趋势趋弱,deg={}".format(deg_full)})
 
 
             elif self.volumn < 0:
                 if deg_full > 0.01:
                     # if abs(deg_order_short) < abs(deg_full):
-                        return self.strategy.cover(bar.close_price, 1, type=OrderType.MARKET), "平仓:趋势趋弱,deg={}".format(deg_full)
+                        return self.strategy.cover(bar.close_price, 1, type=OrderType.MARKET, 
+                        extra={"reason": "平仓:趋势趋弱,deg={}".format(deg_full)})
 
             # print("pos<0", deg_order_short, deg_full)
-        
-        return None, None
+
 
     def on_strategy(self, bar:BarData, calc_data):
         if self.volumn == 0:
-            return None, None
+            return 
         
         if self.level == 0:
             if self.volumn > 0 and bar.close_price > self.safe_price:
@@ -172,13 +170,13 @@ class Position:
                 self.level += 1
 
         order_id = None 
-        reason = None
+
         for close_process in self.close_process:
-            order_id, reason = close_process(bar, calc_data)
+            order_id = close_process(bar, calc_data)
             if order_id is not None:
                 break
 
-        return order_id, reason
+        return order_id
             # # print(deg)
             # if abs(deg_order_short) < abs(deg_full):
             #     order_id = self.strategy.cover(bar.close_price, 1) 
@@ -353,17 +351,18 @@ class PatternScoreStrategy(CtaTemplate):
         if score > self.max:
             self.max = score
         
-        order_id = None
-        reason = None
         if abs(calc_data["range_sum"]) < 0.001 or abs(score) < 300:
-            return order_id, reason
+            return
 
         # if std_val2 < 0.2: 
         if score > 0 and calc_data["range_sum"] > 0:
-            order_id, reason = self.buy(bar.close_price, 1, type=OrderType.MARKET), "开多,score={}, rang_sum={}".format(score, calc_data["range_sum"])
+            return self.buy(bar.close_price, 1, type=OrderType.MARKET,
+                            extra={"reason": "开多,score={}, rang_sum={}".format(score, calc_data["range_sum"])})
         if score < 0 and calc_data["range_sum"] < 0:
-            order_id, reason = self.short(bar.close_price, 1, type=OrderType.MARKET), "开多,score={}, rang_sum={}".format(score, calc_data["range_sum"])
-        return order_id, reason
+            return self.short(bar.close_price, 1, type=OrderType.MARKET,
+                              extra={"reason":"开多,score={}, rang_sum={}".format(score, calc_data["range_sum"])})
+
+
     def generate_data(self, bar:BarData):
         offset = -self.offset
         offset_m = int(offset / 2)
@@ -384,7 +383,7 @@ class PatternScoreStrategy(CtaTemplate):
         deg2 = calc_regress_deg(self.am.close[offset_m :], False)
         deg3 = calc_regress_deg(self.am.close[-10 :], False)
         deg_full = calc_regress_deg(self.am.close[offset :], False)
-
+        
         calc_data = (dict(
                 kdj=[round(kdj_val["k"][-1],2),round(kdj_val["d"][-1],2),round(kdj_val["j"][-1],2)],
                 deg40_20=round(deg1,2), deg20=round(deg2,2), deg10=round(deg3,2),deg_f=round(deg_full,2),
@@ -392,7 +391,8 @@ class PatternScoreStrategy(CtaTemplate):
                 std_40=round(std_val, 2),mean40=round(mean_val,2), 
                 std_10=round(std_val2,2), mean30_10=round(mean_val4,2), mean10=round(mean_val2,2),
                 vol=self.am.volume[-1], std_range=self.std_range.data[-1:-5:-1], range=self.am.range[-1:-5:-1].tolist(),
-                range_sum=np.sum(self.am.range[-5:]), atr=self.am.atr(10), tr=self.am.atr(1, length=2)))
+                range_sum=np.sum(self.am.range[-5:]), atr=self.am.atr(10), tr=self.am.atr(1, length=2),
+                pattern=list(map(lambda x: KLINE_PATTERN_CHINESE[x], self.pattern_record.keys()))))
 
         return calc_data
 
@@ -400,14 +400,14 @@ class PatternScoreStrategy(CtaTemplate):
         calc_data = self.generate_data(bar)
             
         order_id = None
-        reason = None
+
         if self.pos == 0:
             for open_strategy in self.open_strategy:
                 if order_id is not None:
                     break
-                order_id, reason = open_strategy(bar, calc_data)
+                order_id = open_strategy(bar, calc_data)
         else:
-            order_id, reason = self.positions.on_strategy(bar, calc_data)
+            order_id = self.positions.on_strategy(bar, calc_data)
 
         
         if order_id is not None:
@@ -418,8 +418,6 @@ class PatternScoreStrategy(CtaTemplate):
             self.request_order.extend(order_id)
         
         if self.tracker is not None:
-            if reason is not None:
-                calc_data["reason"] = reason
             self.tracker["ma_tag_ls"].append(calc_data)
 
     def on_bar(self, bar: BarData):

@@ -431,14 +431,14 @@ if __name__ == "__main__":
     # strategy_test.download(stock, start_date, end_date)
     strategy_list = ["MaLevelTrackStrategy", "PatternScoreStrategy"]
 
-    strategy_test.start_backtester(strategy_list[1], stock, start_date, end_date)
+    strategy_test.start_backtester(strategy_list[0], stock, start_date, end_date)
     # close = strategy_test.close
     # close = np.array(close)
     # calc_regress_deg(close)
     width=1800
     height=600
-    # strategy_test.init_plot(width=width, height=height)
-    strategy_test.init_plot()
+    strategy_test.init_plot(width=width, height=height)
+    # strategy_test.init_plot()
     strategy_test.statistics()
     strategy_test.plot_kline()
     ma_line = [10, 20, 30, 60, 120]

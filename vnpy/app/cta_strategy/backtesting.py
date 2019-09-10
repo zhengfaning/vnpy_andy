@@ -794,6 +794,7 @@ class BacktestingEngine:
                 volume=order.volume,
                 time=self.datetime.strftime("%H:%M:%S"),
                 gateway_name=self.gateway_name,
+                extra=order.extra
             )
             trade.datetime = self.datetime
 
@@ -910,15 +911,16 @@ class BacktestingEngine:
         volume: float,
         lock: bool,
         order_type: OrderType,
+        extra: dict
     ):
         """"""
         price = round_to(price, self.pricetick)
         if order_type == order_type.STOP:
             vt_orderid = self.send_stop_order(direction, offset, price, volume)
         elif order_type == order_type.MARKET:
-            vt_orderid = self.send_market_order(direction, offset, price, volume)
+            vt_orderid = self.send_market_order(direction, offset, price, volume, extra)
         else:
-            vt_orderid = self.send_limit_order(direction, offset, price, volume)
+            vt_orderid = self.send_limit_order(direction, offset, price, volume, extra)
 
         return [vt_orderid]
 
@@ -952,7 +954,8 @@ class BacktestingEngine:
         direction: Direction,
         offset: Offset,
         price: float, 
-        volume: float
+        volume: float,
+        extra: dict = None
     ):
         """"""
         self.limit_order_count += 1
@@ -968,6 +971,7 @@ class BacktestingEngine:
             volume=volume,
             status=Status.SUBMITTING,
             gateway_name=self.gateway_name,
+            extra=extra
         )
         order.datetime = self.datetime
 
@@ -981,7 +985,8 @@ class BacktestingEngine:
         direction: Direction,
         offset: Offset,
         price: float, 
-        volume: float
+        volume: float,
+        extra: dict = None
     ):
         """"""
         self.limit_order_count += 1
@@ -996,6 +1001,7 @@ class BacktestingEngine:
             volume=volume,
             status=Status.SUBMITTING,
             gateway_name=self.gateway_name,
+            extra=extra
         )
         order.datetime = self.datetime
 

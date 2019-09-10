@@ -151,29 +151,29 @@ class CtaTemplate(ABC):
         """
         pass
 
-    def buy(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT):
+    def buy(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT, extra: dict = None):
         """
         Send buy order to open a long position.
         """
-        return self.send_order(Direction.LONG, Offset.OPEN, price, volume, lock, type)
+        return self.send_order(Direction.LONG, Offset.OPEN, price, volume, lock, type, extra=extra)
 
-    def sell(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT):
+    def sell(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT, extra: dict = None):
         """
         Send sell order to close a long position.
         """
-        return self.send_order(Direction.SHORT, Offset.CLOSE, price, volume, lock, type)
+        return self.send_order(Direction.SHORT, Offset.CLOSE, price, volume, lock, type, extra=extra)
 
-    def short(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT):
+    def short(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT, extra: dict = None):
         """
         Send short order to open as short position.
         """
-        return self.send_order(Direction.SHORT, Offset.OPEN, price, volume, lock, type)
+        return self.send_order(Direction.SHORT, Offset.OPEN, price, volume, lock, type, extra=extra)
 
-    def cover(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT):
+    def cover(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.LIMIT, extra: dict = None):
         """
         Send cover order to close a short position.
         """
-        return self.send_order(Direction.LONG, Offset.CLOSE, price, volume, lock, type)
+        return self.send_order(Direction.LONG, Offset.CLOSE, price, volume, lock, type, extra=extra)
 
     def send_order(
         self,
@@ -183,13 +183,14 @@ class CtaTemplate(ABC):
         volume: float,
         lock: bool = False,
         type: OrderType = OrderType.LIMIT,
+        extra: dict = None
     ):
         """
         Send a new order.
         """
         if self.trading:
             vt_orderids = self.cta_engine.send_order(
-                self, direction, offset, price, volume, lock, type
+                self, direction, offset, price, volume, lock, type, extra=extra
             )
             return vt_orderids
         else:

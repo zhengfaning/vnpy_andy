@@ -19,31 +19,44 @@ from dataclasses import dataclass, field
 from  enum import Enum
 
 class PatternRecord:
-    record = {}
+    data = {}
     expiry = {}
     def __init__(self):
         pass
 
     def add_pattern(self, pattern_list):
         for item in pattern_list:
-            self.record[item] = 0
+            self.data[item[0]] =dict(count=0,value=item[1])
 
-    def set_expiry(self, pattern, count):
-        self.expiry[pattern] = count
 
     def update(self):
         discard = []
-        for i in self.record.keys():
-            self.record[i] += 1
-            if i[1] in self.expiry and self.record[i] > self.expiry[i[1]]:
+        for i in self.data.keys():
+            self.data[i]["count"] += 1
+            if i in self.expiry and self.data[i]["count"] > self.expiry[i]:
                 discard.append(i)
         
         for item in discard:
-            self.record.pop(item)
+            self.data.pop(item)
+
+    def set_expiry(self, pattern_list, count):
+        for item in pattern_list:
+            self.expiry[item] = count
 
     def __contains__(self, item):
-	    return item in self.record
+	    return item in self.data
+    
+    def __getitem__(self, i):
+        return self.data[i]
+    
+    def keys(self):
+        return self.data.keys()
 
+    def items(self):
+        return self.data.items()
+
+    def values(self):
+        return self.data.values()
 class ClosePosType(Enum):
     SAFE_PRICE = 1
     TREND_CHANGE = 2
@@ -63,6 +76,7 @@ class Position:
         self.strategy = strategy
         # self.am = self.strategy.am
         self.ma_tag = self.strategy.ma_tag
+        self.close_process = [self.close1, self.close2]
 
     def buy(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.MARKET):
         """
@@ -88,32 +102,60 @@ class Position:
         """
         return self.strategy.send_order(Direction.LONG, Offset.CLOSE, price, volume, lock, type)
 
-    def on_strategy(self, bar:BarData, calc_data):
-        if self.volumn == 0:
-            return
-        
-        self.order_data = np.append(self.order_data, bar.close_price)
-
+    def close1(self, bar:BarData, calc_data):
         if self.volumn < 0:
             if bar.close_price > self.close_price:
-                order_id = self.strategy.cover(self.close_price, 1, type=OrderType.MARKET)
-                return order_id
+                return self.strategy.cover(self.close_price, 1, type=OrderType.MARKET,
+                       extra= { "reason":"平仓:到达最低价{}".format(self.close_price)})
+                 
         elif self.volumn > 0:
             if bar.close_price < self.close_price:
-                order_id = self.strategy.sell(self.close_price, 1, type=OrderType.MARKET)
-                return order_id
+                return self.strategy.sell(self.close_price, 1, type=OrderType.MARKET,
+                       extra={"reason": "平仓:到达最低价{}".format(self.close_price)})
+
+    
+    def close2(self, bar:BarData, calc_data):
         
-        order_id = None
-        offset = -40
-        offset_m = int(offset / 2)
+        if self.level > 0:
+            self.order_data = np.append(self.order_data, bar.close_price)
+            order_id = None
+            offset = -40
+            offset_m = int(offset / 2)
+
+            
+            deg_full = calc_regress_deg(self.strategy.am.close[-10 :], False)
+            
+            if len(self.order_data) > abs(offset * 1.5):
+                y_fit = reg_util.regress_y_polynomial(self.order_data, zoom=True)
+                deg_order_short = calc_regress_deg(y_fit[:abs(offset)], False)
+
+            if self.volumn > 0:
+                if deg_full < -0.01:
+                    # if abs(deg_order_short) < abs(deg_full):
+                        return self.strategy.sell(bar.close_price, 1, type=OrderType.MARKET, 
+                                extra={"reason":"平仓:趋势趋弱,deg={}".format(deg_full)})
+
+
+            elif self.volumn < 0:
+                if deg_full > 0.01:
+                    # if abs(deg_order_short) < abs(deg_full):
+                        return self.strategy.cover(bar.close_price, 1, type=OrderType.MARKET, 
+                        extra={"reason": "平仓:趋势趋弱,deg={}".format(deg_full)})
+
+            # print("pos<0", deg_order_short, deg_full)
+
+
+    def on_strategy(self, bar:BarData, calc_data):
+        if self.volumn == 0:
+            return 
         
-        # self.price
         if self.level == 0:
             if self.volumn > 0 and bar.close_price > self.safe_price:
                 self.level += 1
             elif self.volumn < 0 and bar.close_price < self.safe_price:
                 self.level += 1
 
+        offset = -40
         calc_nums = np.array(self.ma_tag[-offset:-1])
                 # var_val = np.var(calc_nums)
         std_val = np.std(calc_nums)
@@ -127,27 +169,14 @@ class Position:
             elif self.volumn < 0 and mean_val < 1.2:
                 self.level += 1
 
-        if self.level > 0:
-            if len(self.order_data) > abs(offset * 1.5):
-                deg_full = calc_regress_deg(self.strategy.am.close[offset :], False)
-                y_fit = reg_util.regress_y_polynomial(self.order_data, zoom=True)
-                deg_order_short = calc_regress_deg(y_fit[:abs(offset)], False)
+        order_id = None 
 
-                if self.volumn > 0:
-                    if deg_full < -0.00:
-                        # if abs(deg_order_short) < abs(deg_full):
-                            return self.strategy.sell(bar.close_price, 1, type=OrderType.MARKET)
+        for close_process in self.close_process:
+            order_id = close_process(bar, calc_data)
+            if order_id is not None:
+                break
 
-
-
-                elif self.volumn < 0:
-                    if deg_full > 0.0:
-                        # if abs(deg_order_short) < abs(deg_full):
-                            return self.strategy.cover(bar.close_price, 1, type=OrderType.MARKET)
-
-            # print("pos<0", deg_order_short, deg_full)
-        
-        return
+        return order_id
             # # print(deg)
             # if abs(deg_order_short) < abs(deg_full):
             #     order_id = self.strategy.cover(bar.close_price, 1) 
@@ -193,7 +222,7 @@ class Position:
 class MaLevelTrackStrategy(CtaTemplate):
     author = "用Python的交易员"
 
-    ma_level = [10, 20, 30, 60, 120]
+    ma_level = [5, 10, 20, 30, 120]
     ma_tag = []
     bd = []
     fast_ma0 = 0.0
@@ -225,10 +254,13 @@ class MaLevelTrackStrategy(CtaTemplate):
         self.std_range3 = IntervalGen(np.std,5)        
         self.std_range5 = IntervalGen(np.std,5)
         self.pattern_record = PatternRecord()
-        self.pattern_record.set_expiry(KlinePattern.CDLEVENINGSTAR, 3)
-        self.open_strategy = [self.open_kline1]
+        # self.pattern_record.set_expiry([KlinePattern.CDLEVENINGSTAR], 3)
+        self.pattern_record.set_expiry(list(KlinePattern), 1)
+        
+        self.open_strategy = [self.open5]
         self.offset = 40
-
+        self.ma120_track = None
+        self.ma120_track_list = []
     def on_init(self):
         """
         Callback when strategy is inited.
@@ -292,7 +324,7 @@ class MaLevelTrackStrategy(CtaTemplate):
         self.am5.update_bar(bar)
         if not self.am.inited or not self.trading:
             return   
-        pattern_list = [KlinePattern.CDLEVENINGSTAR, KlinePattern.CDL2CROWS, KlinePattern.CDLCONCEALBABYSWALL, KlinePattern.CDLEVENINGDOJISTAR]
+        # pattern_list = [KlinePattern.CDLEVENINGSTAR, KlinePattern.CDL2CROWS, KlinePattern.CDLCONCEALBABYSWALL, KlinePattern.CDLEVENINGDOJISTAR]
         pattern = self.am5.pattern(list(KlinePattern))
         if len(pattern) > 0:
             print(list(map(lambda x: (KLINE_PATTERN_CHINESE[x[0]],x[1]), pattern)))
@@ -358,6 +390,18 @@ class MaLevelTrackStrategy(CtaTemplate):
         elif mean_val2 < 1.5 and mean_val2 <= (mean - 2):
                 return self.short(bar.close_price, 1, type=OrderType.MARKET)
 
+
+    def open5(self, bar:BarData, calc_data):
+        
+        ma = self.ma_tag[-1]
+        mean = calc_data["mean30_10"]
+        ma120 = self.am.sma(120)
+        # if std_val2 < 0.2: 
+        if bar.close_price >= ma120 and ma == 5 and mean < 2:
+                return self.buy(bar.close_price, 1, type=OrderType.MARKET)
+        elif bar.close_price < ma120 and ma == 0 and mean > 3:
+                return self.short(bar.close_price, 1, type=OrderType.MARKET)
+
     def open_kline1(self, bar:BarData, calc_data):
         
         if KlinePattern.CDLEVENINGSTAR not in self.pattern_record:
@@ -395,7 +439,12 @@ class MaLevelTrackStrategy(CtaTemplate):
                 time=bar.datetime, price=bar.close_price, ma=round(ma, 2), 
                 std_40=round(std_val, 2),mean40=round(mean_val,2), 
                 std_10=round(std_val2,2), mean30_10=round(mean_val4,2), mean10=round(mean_val2,2),
-                vol=self.am.volume[-1], range=self.std_range.data[-1:-5:-1]))
+                vol=self.am.volume[-1], std_range=self.std_range.data[-1:-5:-1], range=self.am.range[-1:-5:-1].tolist(),
+                range_sum=np.sum(self.am.range[-5:]), atr=self.am.atr(10), tr=self.am.atr(1, length=2),
+                pattern=list(map(lambda x: KLINE_PATTERN_CHINESE[x], self.pattern_record.keys())),
+                ma120_track=self.ma120_track, ma120_track_list=self.ma120_track_list[-1:-20:-1], 
+                ma120_track_sum=np.sum(self.ma120_track_list[-20:-1] + [self.ma120_track]), ma120_track_mean=np.mean(self.ma120_track_list[-20:-1] + [self.ma120_track]),
+                ma120_track_std=np.std(self.ma120_track_list[-20:-1] + [self.ma120_track])))
 
         return calc_data
 
@@ -460,7 +509,26 @@ class MaLevelTrackStrategy(CtaTemplate):
             self.tracker["bar_data"].append(bar)
         self.std_range.update(self.am.range[-1])
 
-                
+        ma120 = self.am.sma(120)
+        
+        if bar.close_price >= ma120:
+            if self.ma120_track is None:
+                self.ma120_track = 1
+            elif self.ma120_track > 0:
+                self.ma120_track += 1
+            else:
+                self.ma120_track_list.append(self.ma120_track)
+                self.ma120_track = 1
+        elif bar.close_price < ma120:
+            if self.ma120_track is None:
+                self.ma120_track = -1
+            elif self.ma120_track < 0:
+                self.ma120_track -= 1
+            else:
+                self.ma120_track_list.append(self.ma120_track)
+                self.ma120_track = -1
+
+
 
         if not am.inited or not self.trading:
             return

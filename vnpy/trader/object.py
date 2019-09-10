@@ -2,7 +2,10 @@
 Basic data structure used for general trading function in VN Trader.
 """
 
-from dataclasses import dataclass
+from dataclasses import (
+  dataclass,
+  field
+)
 from datetime import datetime
 from logging import INFO
 
@@ -118,6 +121,7 @@ class OrderData(BaseData):
     traded: float = 0
     status: Status = Status.SUBMITTING
     time: str = ""
+    extra: dict = field(default_factory=dict)
 
     def __post_init__(self):
         """"""
@@ -160,6 +164,7 @@ class TradeData(BaseData):
     price: float = 0
     volume: float = 0
     time: str = ""
+    extra: dict = field(default_factory=dict)
 
     def __post_init__(self):
         """"""
