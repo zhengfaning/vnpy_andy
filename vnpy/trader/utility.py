@@ -477,35 +477,52 @@ class ArrayManager(object):
             return result
         return result[-1]
 
-    def cci(self, n, array=False):
+    def cci(self, n, array=False, length=None):
         """
         Commodity Channel Index (CCI).
         """
-        result = talib.CCI(self.high, self.low, self.close, n)
+        
         if array:
+            if length is not None:
+                result = talib.CCI(self.high[-length:], self.low[-length:], self.close[-length:], n)
+            else:
+                result = talib.CCI(self.high, self.low, self.close, n)
             return result
-        return result[-1]
+        else:
+            l = n+1
+            result = talib.CCI(self.high[-l:], self.low[-l:], self.close[-l:], n)
+            return result[-1]
+        
 
     def atr(self, n, array=False, length=None):
         """
         Average True Range (ATR).
         """
-        if length is not None:
-            result = talib.ATR(self.high[-length:], self.low[-length:], self.close[-length:], n)
-        else:
-            result = talib.ATR(self.high, self.low, self.close, n)
         if array:
+            if length is not None:
+                result = talib.ATR(self.high[-length:], self.low[-length:], self.close[-length:], n)
+            else:
+                result = talib.ATR(self.high, self.low, self.close, n)
             return result
-        return result[-1]
+        else:
+            l = n+1
+            result = talib.ATR(self.high[-l:], self.low[-l:], self.close[-l:], n)
+            return result[-1]
 
-    def rsi(self, n, array=False):
+    def rsi(self, n, array=False, length=None):
         """
         Relative Strenght Index (RSI).
         """
-        result = talib.RSI(self.close, n)
         if array:
+            if length is not None:
+                result = talib.RSI(self.close[-length:], n)
+            else:
+                result = talib.RSI(self.close, n)
             return result
-        return result[-1]
+        else:
+            l = n+1
+            result = talib.RSI(self.close[-l:], n)
+            return result[-1]
 
     def macd(self, fast_period, slow_period, signal_period, array=False, length=None):
         """
@@ -523,14 +540,20 @@ class ArrayManager(object):
             return macd, signal, hist
         return macd[-1], signal[-1], hist[-1]
 
-    def adx(self, n, array=False):
+    def adx(self, n, array=False, length=None):
         """
         ADX.
         """
-        result = talib.ADX(self.high, self.low, self.close, n)
         if array:
+            if length is not None:
+                result = talib.ADX(self.high[-length:], self.low[-length:], self.close[-length:], n)
+            else:
+                result = talib.ADX(self.high, self.low, self.close, n)
             return result
-        return result[-1]
+        else:
+            l = n * 2
+            result = talib.ADX(self.high[-l:], self.low[-l:], self.close[-l:], n)
+            return result[-1]
 
     def boll(self, n, dev, array=False, length=None):
         """

@@ -218,7 +218,7 @@ class BacktesterApp:
             nitem.pop("price")
             desc = str(nitem)
             tooltip_desc.append(desc)
-            deg_desc.append("{:.2f}  {:.2f}  {:.2f}".format(item["deg40_20"], item["deg20"], item["deg_f"]))
+            deg_desc.append("{:.2f}  {:.2f}  {:.2f}".format(item["deg40_20"], item["deg20_0"], item["deg_f"]))
             t = local_to_eastern(item["time"].timestamp())
             dt.append(t.strftime("%m/%d %H:%M:%S"))
             c = palettes_colors[0]
@@ -417,8 +417,8 @@ if __name__ == "__main__":
 
     strategy_test = BacktesterApp()
     start_date = datetime.datetime(2019,8,2,20)
-    end_date = datetime.datetime(2019,9,8,20)
-    stock = "pdd.SMART"
+    end_date = datetime.datetime(2019,9,13,20)
+    stock = "fb.SMART"
     algo_setting= {
         "vt_symbol": "",
         "direction": Direction.LONG.value,
@@ -429,7 +429,7 @@ if __name__ == "__main__":
     algo_setting["template_name"] = "ArbitrageAlgo"
     # strategy_test.start_algo(algo_setting)
     # strategy_test.download(stock, start_date, end_date)
-    strategy_list = ["MaLevelTrackStrategy", "PatternScoreStrategy"]
+    strategy_list = ["MaLevelTrackStrategy", "PatternScoreStrategy", "BollChannelStrategy"]
 
     strategy_test.start_backtester(strategy_list[0], stock, start_date, end_date)
     # close = strategy_test.close
@@ -437,8 +437,8 @@ if __name__ == "__main__":
     # calc_regress_deg(close)
     width=1800
     height=600
-    strategy_test.init_plot(width=width, height=height)
-    # strategy_test.init_plot()
+    # strategy_test.init_plot(width=width, height=height)
+    strategy_test.init_plot()
     strategy_test.statistics()
     strategy_test.plot_kline()
     ma_line = [10, 20, 30, 60, 120]
