@@ -222,11 +222,7 @@ class BacktesterApp:
             t = local_to_eastern(item["time"].timestamp())
             dt.append(t.strftime("%m/%d %H:%M:%S"))
             c = palettes_colors[0]
-            if item["std_10"] < 0.1:
-                c = colors.named.red
-            elif item["mean10"] < 1:
-                c = colors.named.green
-            elif item["mean10"] > 4:
+            if "trade" in item:
                 c = colors.named.gold
             color_ls.append(c)
 
@@ -270,7 +266,80 @@ class BacktesterApp:
         self.plot.add_tools(hover)
         # self.plot.tooltips = TOOLTIPS
         self.plot.circle("x", "y", color='color', size=7, source=source, legend="point desc")
-    
+
+    def plot_bar_tag(self):
+        tooltip_x = []
+        tooltip_y = []
+        tooltip_desc = []
+        deg_desc = []
+        color_ls = []
+        dt=[]
+        if "bar_tag" not in self.tracker:
+            return 
+
+        for item in self.tracker["bar_tag"]:
+            index = self.date_index[item["time"]]
+            tooltip_x.append(int(index))
+            tooltip_y.append(item["price"])
+            # desc = "m={} s={:.2f} s2={:.2f} ma={:.2f} ma2={:.2f}".format(item[2], item[3], item[8], item[4],item[9])
+            nitem=dict(item)
+            nitem.pop("time")
+            nitem.pop("price")
+            desc = str(nitem)
+            tooltip_desc.append(desc)
+            deg_desc.append("{:.2f}  {:.2f}  {:.2f}".format(item["deg40_20"], item["deg20_0"], item["deg_f"]))
+            t = local_to_eastern(item["time"].timestamp())
+            dt.append(t.strftime("%m/%d %H:%M:%S"))
+            c = palettes_colors[0]
+            if "trade" in item:
+                c = colors.named.red
+            # elif item["mean10"] < 1:
+            #     c = colors.named.green
+            # elif item["mean10"] > 4:
+            #     c = colors.named.gold
+            color_ls.append(c)
+
+
+        source = ColumnDataSource(data=dict(
+            x=tooltip_x,
+            y=tooltip_y,
+            dt=dt,
+            desc=tooltip_desc,
+            deg=deg_desc,
+            color=color_ls
+        ))
+
+        # TOOLTIPS = [
+        #     ("index", "$index"),
+        #     ("time", "@dt"),
+        #     ("price", "@y{0.00}"),
+        #     ("desc", "@desc"),
+        #     ("deg", "@deg"),
+        # ]
+        TOOLTIPS = """
+            <div style="width:300px">
+                <div>
+                    <span>index:[$index]</span>
+                </div>
+                <div>
+                    <span>time:@dt</span>
+                </div>
+                <div>
+                    <span>price:@y{0.00}</span>
+                </div>
+                <div>
+                    <span>desc:@desc</span>
+                </div>
+                <div>
+                    <span>deg:@deg</span>
+                </div>
+            </div>
+        """
+        hover = HoverTool(tooltips=TOOLTIPS)
+        self.plot.add_tools(hover)
+        # self.plot.tooltips = TOOLTIPS
+        self.plot.circle("x", "y", color='color', size=7, source=source, legend="bar tag")
+
     def plot_ma_line(self, ma_param_list = [5, 10, 30, 60, 120]):
         c_i = 5
         close = np.array(self.close)
@@ -383,7 +452,8 @@ class BacktesterApp:
         self.plot.legend.click_policy="hide"
         
         if self.strategy.find("MaLevelTrackStrategy") != -1 or \
-           self.strategy.find("PatternScoreStrategy") != -1:
+           self.strategy.find("PatternScoreStrategy") != -1 or \
+           self.strategy.find("ReverseCatchStrategy") != -1:
             self.plot_ma_tag()
             self.plot_trade_degline()
         elif self.strategy == "Kdj120MaStrategy":
@@ -429,9 +499,9 @@ if __name__ == "__main__":
     algo_setting["template_name"] = "ArbitrageAlgo"
     # strategy_test.start_algo(algo_setting)
     # strategy_test.download(stock, start_date, end_date)
-    strategy_list = ["MaLevelTrackStrategy", "PatternScoreStrategy", "BollChannelStrategy"]
+    strategy_list = ["MaLevelTrackStrategy", "PatternScoreStrategy", "BollChannelStrategy", "ReverseCatchStrategy"]
 
-    strategy_test.start_backtester(strategy_list[0], stock, start_date, end_date)
+    strategy_test.start_backtester(strategy_list[3], stock, start_date, end_date)
     # close = strategy_test.close
     # close = np.array(close)
     # calc_regress_deg(close)

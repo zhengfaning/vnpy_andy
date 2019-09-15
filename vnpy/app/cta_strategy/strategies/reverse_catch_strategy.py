@@ -77,7 +77,7 @@ class Position:
     guard = None
 
     def __init__(self, strategy):
-        self.strategy: MaLevelTrackStrategy = strategy
+        self.strategy: ReverseCatchStrategy = strategy
         # self.am = self.strategy.am
         self.ma_tag = self.strategy.ma_tag
         self.close_process = [self.close1, self.close_ma120]
@@ -266,7 +266,8 @@ class Position:
     TODO: 加入高吊线和低线识别
     TODO: 策略架构改进,多个策略并存
 '''
-class MaLevelTrackStrategy(CtaTemplate):
+
+class ReverseCatchStrategy(CtaTemplate):
     author = "用Python的交易员"
 
     ma_level = [5, 10, 20, 30, 120]
@@ -279,18 +280,18 @@ class MaLevelTrackStrategy(CtaTemplate):
     slow_ma1 = 0.0
     request_order = []
     bar_identify = []
-    
+    volumn = 0
     
     parameters = ["ma_level"]
     variables = ["fast_ma0", "fast_ma1", "slow_ma0", "slow_ma1"]
 
     def __init__(self, cta_engine, strategy_name, vt_symbol, setting):
         """"""
-        super(MaLevelTrackStrategy, self).__init__(
+        super(ReverseCatchStrategy, self).__init__(
             cta_engine, strategy_name, vt_symbol, setting
         )
-        self.bg = BarGenerator(self.on_bar, 15, self.on_1min_bar)
-        self.am = ArrayManager(400)
+        self.bg = BarGenerator(self.on_bar, 1, self.on_1min_bar)
+        self.am = ArrayManager(200)
         self.am3 = ArrayManager(150)
         self.bg3 = BarGenerator(self.on_bar, 3, self.on_3min_bar)
         self.am5 = ArrayManager(120)
@@ -304,10 +305,10 @@ class MaLevelTrackStrategy(CtaTemplate):
         # self.pattern_record.set_expiry([KlinePattern.CDLEVENINGSTAR], 3)
         self.pattern_record.set_expiry(list(KlinePattern), 1)
         
-        five_min_open_5 = partial(self.reverse_shape_strategy, setting={"atr":10, "atr_valve":0.8, "deg1":(10,5),"deg2":5})
+        
+        five_min_open_5 = partial(self.reverse_shape_strategy, setting={"len":20, "atr":10, "atr_valve":0.8, "mid_sign":(7,14)})
         self.open_strategy = {
-            "1":[self.reverse_shape_strategy],
-            "5":[five_min_open_5],
+            "1":[five_min_open_5],
         }
         self.offset = 40
         self.ma120_track = None
@@ -317,7 +318,7 @@ class MaLevelTrackStrategy(CtaTemplate):
         Callback when strategy is inited.
         """
         self.write_log("策略初始化")
-        self.load_bar(10)
+        self.load_bar(5)
 
     def on_start(self):
         """
@@ -433,7 +434,7 @@ class MaLevelTrackStrategy(CtaTemplate):
         if not self.am.inited or not self.trading:
             return   
         
-        self.on_strategy(self.am5, bar, self.open_strategy["5"])
+        # self.on_strategy(self.am5, bar, self.open_strategy["5"])
         # pattern_list = [KlinePattern.CDLEVENINGSTAR, KlinePattern.CDL2CROWS, KlinePattern.CDLCONCEALBABYSWALL, KlinePattern.CDLEVENINGDOJISTAR]
     #     pattern = self.am5.pattern(list(KlinePattern))
     #     if len(pattern) > 0:
@@ -502,15 +503,18 @@ class MaLevelTrackStrategy(CtaTemplate):
                 return self.short(bar.close_price, 1, type=OrderType.MARKET)
 
     # v形反转捕获
-    def reverse_shape_strategy(self, am:ArrayManager, bar:BarData, calc_data, setting={"atr":40, "atr_valve":0.8, "deg1":(40,20),"deg2":(20,0),}):
+    def reverse_shape_strategy(self, am:ArrayManager, bar:BarData, calc_data, setting={"len":40, "atr":40, "atr_valve":0.09, "mid_sign":(10,30)}):
+        length = setting["len"]
+        offset1 = int(-length)
+        offset2 = int(-(length / 2))
+        close = am.close
+        deg1 = calc_regress_deg(close[offset1:offset2], False)
+        deg2 = calc_regress_deg(close[offset2:], False)
         
-        deg1 = calc_data["deg40_20"]
-        deg2 = calc_data["deg20_0"]
-        kdj = calc_data["kdj"]
 
-        atr = self.am.atr(40)
-
-        if atr < 0.08:
+        atr = self.am.atr(setting["atr"])
+        atr_valve = setting["atr_valve"]
+        if atr < atr_valve:
             return
 
         if deg1 > 0 and deg2 > 0 or \
@@ -520,13 +524,13 @@ class MaLevelTrackStrategy(CtaTemplate):
         if not (abs(deg1) > 0.15 and abs(deg2) > 0.1 and (abs(deg1) + abs(deg2)) > 0.3) :
             return
 
-        close = am.close[-40:]
+        close = am.close[-length:]
         min_val = np.min(close)
         max_val = np.max(close)
         mid_val =  max_val if deg1 > 0 else min_val
         mid_pos = np.where(close == mid_val)[0][0]
 
-        if mid_pos < 10 or mid_pos > 30:
+        if mid_pos < setting["mid_sign"][0] or mid_pos > setting["mid_sign"][1]:
             return
 
         start_val = np.min(close[:mid_pos]) if deg1 > 0 else np.max(close[:mid_pos])
@@ -537,20 +541,34 @@ class MaLevelTrackStrategy(CtaTemplate):
 
 
         # pos2 = np.where(close == min_val)[0][0]
-        
+        kdj = am.kdj()
+        k = kdj["k"][-1]
+        d = kdj["d"][-1]
+        j = kdj["j"][-1]
         x_fit = reg_util.regress_y_polynomial(close[:mid_pos], zoom=True)
         deg1_remake = calc_regress_deg(x_fit[:abs(mid_pos)], False)
         y_fit = reg_util.regress_y_polynomial(close[mid_pos:], zoom=True)
         deg2_remake = calc_regress_deg(y_fit[:abs(mid_pos)], False)
-        print(start_pos, mid_pos, deg1, deg2, deg1_remake, deg2_remake, l, start_val, mid_val)
+        # print(start_pos, mid_pos, deg1, deg2, deg1_remake, deg2_remake, l, start_val, mid_val)
+        cci = am.cci(20)
         if deg2 < 0:
-            if kdj[0] < 20 and kdj[1] < 10 and kdj[2] < 10:
+            # if k < 20 and d < 10 and j < 10:
             # if kdj[2] < 10:
-                return self.short(bar.close_price, 1, type=OrderType.MARKET)
+            if cci < -100:
+                calc_data["trade"] = {"k":k,"d":d,"j":j}
+                if self.pos == 0:
+                   return self.short(bar.close_price, 1, type=OrderType.MARKET)
+                elif self.pos > 0:
+                   return self.cover(bar.close_price, self.pos, type=OrderType.MARKET)
         else:
-            if kdj[0] > 80 and kdj[1] > 90 and kdj[2] > 90:
+            # if k > 80 and d > 90 and j > 90:
             # if kdj[2] > 90:
-                return self.buy(bar.close_price, 1, type=OrderType.MARKET)
+            if cci > 100:
+                calc_data["trade"] = {"k":k,"d":d,"j":j}
+                if self.pos == 0:
+                    return self.buy(bar.close_price, 1, type=OrderType.MARKET)
+                elif self.pos > 0:
+                    return self.sell(bar.close_price, self.pos, type=OrderType.MARKET)
 
         # print("找到大v形:", deg1, deg2 )
 
@@ -582,42 +600,42 @@ class MaLevelTrackStrategy(CtaTemplate):
         if deg < -0.1:
             return self.short(bar.close_price, 1, type=OrderType.MARKET)
        
-    def generate_data(self, bar:BarData):
+    def generate_data(self, am:ArrayManager, bar:BarData):
         offset = -self.offset
         offset_m = int(offset / 2)
         calc_nums = np.array(self.ma_tag[-offset:-1])
         # var_val = np.var(calc_nums)
         std_val = np.std(calc_nums)
         std_val2 = np.std(np.array(self.ma_tag[-10:-1]))
-        std_val3 = np.std(np.array(self.am.range[-30:-10]))
+        std_val3 = np.std(np.array(am.range[-30:-10]))
         ma = self.ma_tag[-1]
         
         mean_val = np.mean(calc_nums)
         mean_val2 = np.mean(np.array(self.ma_tag[-5:-1]))
         mean_val3 = np.mean(np.array(self.ma_tag[-20:-1]))
         mean_val4 = np.mean(np.array(self.ma_tag[-30:-5]))
-        kdj_val = self.am.kdj()
+        kdj_val = am.kdj()
 
-        deg1 = calc_regress_deg(self.am.close[offset : offset_m], False)
-        deg2 = calc_regress_deg(self.am.close[offset_m :], False)
-        deg3 = calc_regress_deg(self.am.close[-10 :], False)
-        deg_full = calc_regress_deg(self.am.close[offset :], False)
+        deg1 = calc_regress_deg(am.close[offset : offset_m], False)
+        deg2 = calc_regress_deg(am.close[offset_m :], False)
+        deg3 = calc_regress_deg(am.close[-10 :], False)
+        deg_full = calc_regress_deg(am.close[offset :], False)
 
-        wave = self.wave(self.am.close[-30:])
+        wave = self.wave(am.close[-30:])
         wave_r_sum = np.sum(wave["range"])
-        macd=self.am.macd(20,40, 16)
+        macd=am.macd(20,40, 16)
         calc_data = (dict(
                 kdj=[round(kdj_val["k"][-1],2),round(kdj_val["d"][-1],2),round(kdj_val["j"][-1],2)],
-                cci_20=self.am.cci(20),rsi=self.am.rsi(20),adx=self.am.adx(20),boll=self.am.boll(20, 3.4),
+                cci_20=am.cci(20),rsi=am.rsi(20),adx=am.adx(20),boll=am.boll(20, 3.4),
                 macd=[round(macd[0],2),round(macd[1],2),round(macd[2],2)],
-                deg40_20=round(deg1,2), deg20_0=round(deg2,2), deg20_10=round(calc_regress_deg(self.am.close[-20:-10], False),2), deg10_0=round(deg3,2),
-                deg30_15=round(calc_regress_deg(self.am.close[-30:-15], False),2), deg15_0=round(calc_regress_deg(self.am.close[-15:], False),2),deg_f=round(deg_full,2),
-                atr=round(self.am.atr(10, length=15), 3), tr=round(self.am.atr(1, length=2), 3),atr_40=round(self.am.atr(40, length=42), 3),
+                deg40_20=round(deg1,2), deg20_0=round(deg2,2), deg20_10=round(calc_regress_deg(am.close[-20:-10], False),2), deg10_0=round(deg3,2),
+                deg30_15=round(calc_regress_deg(am.close[-30:-15], False),2), deg15_0=round(calc_regress_deg(am.close[-15:], False),2),deg_f=round(deg_full,2),
+                atr=round(am.atr(10, length=15), 3), tr=round(am.atr(1, length=2), 3),atr_40=round(am.atr(40, length=42), 3),
                 time=bar.datetime, price=bar.close_price, ma=round(ma, 2), 
                 std_40=round(std_val, 2),mean40=round(mean_val,2), mean_std=np.mean(self.std_range.data[-5:]),
                 std_10=round(std_val2,2), mean30_10=round(mean_val4,2), mean10=round(mean_val2,2),
-                vol=self.am.volume[-1], std_range=self.std_range.data[-1:-5:-1], range=self.am.range[-1:-5:-1].tolist(),
-                range_sum=np.sum(self.am.range[-5:]), 
+                vol=am.volume[-1], std_range=self.std_range.data[-1:-5:-1], range=am.range[-1:-5:-1].tolist(),
+                range_sum=np.sum(am.range[-5:]), 
                 pattern=list(map(lambda x: KLINE_PATTERN_CHINESE[x], self.pattern_record.keys())),
                 ma120t=self.ma120_track, 
                 ma120t_list=self.ma120_track_list[-1:-10:-1], 
@@ -625,21 +643,70 @@ class MaLevelTrackStrategy(CtaTemplate):
                 ma120t_sum=np.sum(self.ma120_track_list[-20:-1] + [self.ma120_track]), 
                 ma120t_mean=np.mean(self.ma120_track_list[-20:-1] + [self.ma120_track]),
                 ma120t_std=np.std(self.ma120_track_list[-20:-1] + [self.ma120_track]),
-                wave_cnt=len(wave), wave_r_sum=wave_r_sum, atr_mean=np.mean(self.am.atr(20, array=True,length=240)[-200:])
+                wave_cnt=len(wave), wave_r_sum=wave_r_sum, atr_mean=np.mean(am.atr(20, array=True,length=240)[-200:])
                 ))
 
         return calc_data
 
-    def on_strategy(self, am:ArrayManager, bar: BarData, strategy_list):
-        calc_data = self.generate_data(bar)
+    def generate_3mindata(self, am:ArrayManager, bar:BarData):
+        offset = -self.offset
+        offset_m = int(offset / 2)
+        calc_nums = np.array(self.ma_tag[-offset:-1])
+        # var_val = np.var(calc_nums)
+        std_val = np.std(calc_nums)
+        std_val2 = np.std(np.array(self.ma_tag[-10:-1]))
+        std_val3 = np.std(np.array(am.range[-30:-10]))
+        ma = self.ma_tag[-1]
+        
+        mean_val = np.mean(calc_nums)
+        mean_val2 = np.mean(np.array(self.ma_tag[-5:-1]))
+        mean_val3 = np.mean(np.array(self.ma_tag[-20:-1]))
+        mean_val4 = np.mean(np.array(self.ma_tag[-30:-5]))
+        kdj_val = am.kdj()
+
+        deg1 = calc_regress_deg(am.close[offset : offset_m], False)
+        deg2 = calc_regress_deg(am.close[offset_m :], False)
+        deg3 = calc_regress_deg(am.close[-10 :], False)
+        deg_full = calc_regress_deg(am.close[offset :], False)
+
+        wave = self.wave(am.close[-30:])
+        wave_r_sum = np.sum(wave["range"])
+        macd=am.macd(20,40, 16)
+        calc_data = (dict(
+                kdj=[round(kdj_val["k"][-1],2),round(kdj_val["d"][-1],2),round(kdj_val["j"][-1],2)],
+                cci_20=am.cci(20),rsi=am.rsi(20),adx=am.adx(20),boll=am.boll(20, 3.4),
+                macd=[round(macd[0],2),round(macd[1],2),round(macd[2],2)],
+                deg40_20=round(deg1,2), deg20_0=round(deg2,2), deg20_10=round(calc_regress_deg(am.close[-20:-10], False),2), deg10_0=round(deg3,2),
+                deg30_15=round(calc_regress_deg(am.close[-30:-15], False),2), deg15_0=round(calc_regress_deg(am.close[-15:], False),2),deg_f=round(deg_full,2),
+                atr=round(am.atr(10, length=15), 3), tr=round(am.atr(1, length=2), 3),atr_40=round(am.atr(40, length=42), 3),
+                time=bar.datetime, price=bar.close_price, ma=round(ma, 2), 
+                std_40=round(std_val, 2),mean40=round(mean_val,2), mean_std=np.mean(self.std_range.data[-5:]),
+                std_10=round(std_val2,2), mean30_10=round(mean_val4,2), mean10=round(mean_val2,2),
+                vol=am.volume[-1], std_range=self.std_range.data[-1:-5:-1], range=am.range[-1:-5:-1].tolist(),
+                range_sum=np.sum(am.range[-5:]), 
+                pattern=list(map(lambda x: KLINE_PATTERN_CHINESE[x], self.pattern_record.keys())),
+                ma120t=self.ma120_track, 
+                ma120t_list=self.ma120_track_list[-1:-10:-1], 
+                ma120t_sort=sorted(self.ma120_track_list[-20:-1], key=abs),
+                ma120t_sum=np.sum(self.ma120_track_list[-20:-1] + [self.ma120_track]), 
+                ma120t_mean=np.mean(self.ma120_track_list[-20:-1] + [self.ma120_track]),
+                ma120t_std=np.std(self.ma120_track_list[-20:-1] + [self.ma120_track]),
+                wave_cnt=len(wave), wave_r_sum=wave_r_sum, atr_mean=np.mean(am.atr(20, array=True,length=240)[-200:])
+                ))
+
+        return calc_data
+
+    def on_strategy(self, am:ArrayManager, bar: BarData, strategy_list, calc_data=None):
+        
             
         order_id = None
-        if self.pos == 0:
-            for open_strategy in strategy_list:
-                if order_id is not None:
-                    break
-                order_id = open_strategy(am, bar, calc_data)
-        else:
+
+        for open_strategy in strategy_list:
+            if order_id is not None:
+                break
+            order_id = open_strategy(am, bar, calc_data)
+
+        if order_id is None and self.pos != 0:
             order_id = self.positions.on_strategy(bar, calc_data)
 
         
@@ -710,9 +777,10 @@ class MaLevelTrackStrategy(CtaTemplate):
         if not am.inited or not self.trading:
             return
         
-        
-        
-        self.on_strategy(am, bar, self.open_strategy["1"])
+        calc_data = self.generate_data(am, bar)
+        five_min_open_5 = partial(self.reverse_shape_strategy, setting={"len":20, "atr":10, "atr_valve":0.8, "mid_sign":(7,14)})
+        open_strategy = [self.reverse_shape_strategy]
+        self.on_strategy(am, bar, open_strategy, calc_data)
             # median_val = np.median(calc_nums)
         
         self.put_event()
@@ -738,8 +806,13 @@ class MaLevelTrackStrategy(CtaTemplate):
         print("{}产生了{},价格为{},笔数为{},交易{},pos={}".format(order.datetime.strftime("%m/%d %H:%M:%S"), order.offset.value + order.direction.value,order.price, order.volume, order.status.value, self.pos))
         
         if order.vt_orderid in self.request_order:
+
             self.positions.on_order(order)
             if order.status == Status.ALLTRADED or order.status == Status.CANCELLED or order.status == Status.REJECTED:
+                if order.direction == Direction.LONG:
+                    self.volumn += order.volume
+                elif order.direction == Direction.SHORT:
+                    self.volumn -= order.volume
                 self.request_order.remove(order.vt_orderid)
         # if order.status == Status.ALLTRADED or order.status == Status.PARTTRADED:
         #     if order.direction == Direction.LONG:
