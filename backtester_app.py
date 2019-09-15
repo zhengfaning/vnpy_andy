@@ -222,8 +222,12 @@ class BacktesterApp:
             t = local_to_eastern(item["time"].timestamp())
             dt.append(t.strftime("%m/%d %H:%M:%S"))
             c = palettes_colors[0]
-            if "trade" in item:
+            if "trade_open" in item:
                 c = colors.named.gold
+            elif "trade_close" in item:
+                c = colors.named.orange
+            elif "kdj_key" in item:
+                c = colors.named.lightpink
             color_ls.append(c)
 
 
@@ -292,6 +296,8 @@ class BacktesterApp:
             dt.append(t.strftime("%m/%d %H:%M:%S"))
             c = palettes_colors[0]
             if "trade" in item:
+                c = colors.named.red
+            elif "kdj_key" in item:
                 c = colors.named.red
             # elif item["mean10"] < 1:
             #     c = colors.named.green
@@ -488,7 +494,7 @@ if __name__ == "__main__":
     strategy_test = BacktesterApp()
     start_date = datetime.datetime(2019,8,2,20)
     end_date = datetime.datetime(2019,9,13,20)
-    stock = "fb.SMART"
+    stock = "goog.SMART"
     algo_setting= {
         "vt_symbol": "",
         "direction": Direction.LONG.value,

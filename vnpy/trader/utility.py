@@ -456,26 +456,31 @@ class ArrayManager(object):
         """
         Simple moving average.
         """
-        if length is not None:
-            result = talib.SMA(self.close[-length:], n)
-        else:
-            result = talib.SMA(self.close, n)
         if array:
+            if length is not None:
+                result = talib.SMA(self.close[-length:], n)
+            else:
+                result = talib.SMA(self.close, n)
             return result
-        return result[-1]
+        else:
+            length = n + 1
+            result = talib.SMA(self.close[-length:], n)
+            return result[-1]
 
     def std(self, n, array=False, length=None):
         """
         Standard deviation
         """
-        if length is not None:
-            result = talib.STDDEV(self.close[-length:], n)
-        else:
-            result = talib.STDDEV(self.close, n)
-
         if array:
+            if length is not None:
+                result = talib.STDDEV(self.close[-length:], n)
+            else:
+                result = talib.STDDEV(self.close, n)
             return result
-        return result[-1]
+        else:
+            length = n + 1
+            result = talib.STDDEV(self.close[-length:], n)
+            return result[-1]
 
     def cci(self, n, array=False, length=None):
         """

@@ -20,6 +20,15 @@ from  enum import Enum
 import math
 import pandas as pd
 from functools import partial
+import time, datetime
+from pytz import timezone
+
+
+eastern = timezone('US/Eastern')
+
+def local_to_eastern(unix_time):
+    return datetime.datetime.fromtimestamp(unix_time, eastern)
+
 
 class PatternRecord:
     data = {}
@@ -109,11 +118,13 @@ class Position:
     def close1(self, bar:BarData, calc_data):
         if self.volumn < 0:
             if bar.close_price > self.close_price:
+                calc_data["trade_close"] = "平仓:到达最低价{}".format(self.close_price)
                 return self.strategy.cover(self.close_price, abs(self.volumn), type=OrderType.MARKET,
                        extra= { "reason":"平仓:到达最低价{}".format(self.close_price)})
                  
         elif self.volumn > 0:
             if bar.close_price < self.close_price:
+                calc_data["trade_close"] = "平仓:到达最低价{}".format(self.close_price)
                 return self.strategy.sell(self.close_price, abs(self.volumn), type=OrderType.MARKET,
                        extra={"reason": "平仓:到达最低价{}".format(self.close_price)})
 
@@ -127,12 +138,12 @@ class Position:
 
         close_price = None
         if rg > 0.01 and self.volumn > 0:
-            close_price = am.sma(120, array=False, length=120+1)
+            close_price = am.sma(120)
             if self.level < 5:
                 self.level = 5
                 return self.strategy.buy(bar.close_price, 50, type=OrderType.MARKET) 
         elif rg < -0.01 and self.volumn < 0:
-            close_price = am.sma(120, array=False, length=120+1)
+            close_price = am.sma(120)
             if self.level < 5:
                 self.level = 5
                 return self.strategy.short(bar.close_price, 50, type=OrderType.MARKET) 
@@ -152,11 +163,13 @@ class Position:
         
         if self.volumn < 0:
             if bar.close_price > close_price:
+                calc_data["trade_close"] = "平仓:到达MA均线价{}".format(close_price)
                 return self.strategy.cover(bar.close_price, abs(self.volumn), type=OrderType.MARKET,
                        extra= { "reason":"平仓:到达MA均线价{}".format(close_price)})
                  
         elif self.volumn > 0:
             if bar.close_price < close_price:
+                calc_data["trade_close"] = "平仓:到达MA均线价{}".format(close_price)
                 return self.strategy.sell(bar.close_price, abs(self.volumn), type=OrderType.MARKET,
                        extra={"reason": "平仓:到达MA均线价{}".format(close_price)})
 
@@ -281,7 +294,7 @@ class ReverseCatchStrategy(CtaTemplate):
     request_order = []
     bar_identify = []
     volumn = 0
-    
+    kdj_record = []
     parameters = ["ma_level"]
     variables = ["fast_ma0", "fast_ma1", "slow_ma0", "slow_ma1"]
 
@@ -551,24 +564,29 @@ class ReverseCatchStrategy(CtaTemplate):
         deg2_remake = calc_regress_deg(y_fit[:abs(mid_pos)], False)
         # print(start_pos, mid_pos, deg1, deg2, deg1_remake, deg2_remake, l, start_val, mid_val)
         cci = am.cci(20)
+        ma60 = am.sma(60)
         if deg2 < 0:
             # if k < 20 and d < 10 and j < 10:
             # if kdj[2] < 10:
-            if cci < -100:
-                calc_data["trade"] = {"k":k,"d":d,"j":j}
+            
+            if cci < -100 and bar.close_price < ma60:
                 if self.pos == 0:
+                   calc_data["trade_open"] = "开空,deg={},cci={}".format(deg2, cci)
                    return self.short(bar.close_price, 1, type=OrderType.MARKET)
                 elif self.pos > 0:
-                   return self.cover(bar.close_price, self.pos, type=OrderType.MARKET)
+                   calc_data["trade_close"] = "平多,deg={},cci={}".format(deg2, cci)
+                   return self.sell(bar.close_price, self.pos, type=OrderType.MARKET)
         else:
             # if k > 80 and d > 90 and j > 90:
             # if kdj[2] > 90:
-            if cci > 100:
-                calc_data["trade"] = {"k":k,"d":d,"j":j}
+            if cci > 100 and bar.close_price > ma60:
+                
                 if self.pos == 0:
+                    calc_data["trade_open"] = "开多,deg={},cci={}".format(deg2, cci)
                     return self.buy(bar.close_price, 1, type=OrderType.MARKET)
-                elif self.pos > 0:
-                    return self.sell(bar.close_price, self.pos, type=OrderType.MARKET)
+                elif self.pos < 0:
+                    calc_data["trade_close"] = "平空,deg={},cci={}".format(deg2, cci)
+                    return self.cover(bar.close_price, self.pos, type=OrderType.MARKET)
 
         # print("找到大v形:", deg1, deg2 )
 
@@ -614,8 +632,22 @@ class ReverseCatchStrategy(CtaTemplate):
         mean_val2 = np.mean(np.array(self.ma_tag[-5:-1]))
         mean_val3 = np.mean(np.array(self.ma_tag[-20:-1]))
         mean_val4 = np.mean(np.array(self.ma_tag[-30:-5]))
+        
         kdj_val = am.kdj()
+        has_kdj_recore = False
+        k = kdj_val["k"]
+        d = kdj_val["d"]
+        j = kdj_val["j"]
+        if  (k[-1] > 75 and d[-1] > 75 and j[-1] > 75) or \
+            (k[-1] < 25 and d[-1] < 25 and j[-1] < 75):
+            if (j[-2] < k[-2] or j[-2] < d[-2]) and (j[-1] > k[-1] and j[-1] > d[-1]) \
+                or \
+            (j[-2] > k[-2] or j[-2] > d[-2]) and (j[-1] < k[-1] and j[-1] < d[-1]):
+                has_kdj_recore = True
+                t = local_to_eastern(bar.datetime.timestamp())
+                self.kdj_record.append((t.strftime("%H:%M:%S"), round(k[-1], 3), round(d[-1], 3), round(j[-1], 3)))
 
+        
         deg1 = calc_regress_deg(am.close[offset : offset_m], False)
         deg2 = calc_regress_deg(am.close[offset_m :], False)
         deg3 = calc_regress_deg(am.close[-10 :], False)
@@ -643,9 +675,11 @@ class ReverseCatchStrategy(CtaTemplate):
                 ma120t_sum=np.sum(self.ma120_track_list[-20:-1] + [self.ma120_track]), 
                 ma120t_mean=np.mean(self.ma120_track_list[-20:-1] + [self.ma120_track]),
                 ma120t_std=np.std(self.ma120_track_list[-20:-1] + [self.ma120_track]),
-                wave_cnt=len(wave), wave_r_sum=wave_r_sum, atr_mean=np.mean(am.atr(20, array=True,length=240)[-200:])
+                wave_cnt=len(wave), wave_r_sum=wave_r_sum, atr_mean=np.mean(am.atr(20, array=True,length=240)[-200:]),
+                kdj_record=self.kdj_record[-10:],
                 ))
-
+        if has_kdj_recore:
+            calc_data["kdj_key"] = True
         return calc_data
 
     def generate_3mindata(self, am:ArrayManager, bar:BarData):
