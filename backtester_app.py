@@ -19,7 +19,7 @@ from vnpy.app.cta_strategy import (
 from vnpy.event import EventEngine
 from vnpy.trader.setting import SETTINGS
 from vnpy.trader.engine import MainEngine
-from vnpy.app.cta_strategy.strategies.kdj_120ma_strategy import Kdj120MaStrategy
+from vnpy.app.cta_strategy.strategies.ma_trend_strategy import MaTrendStrategy
 from vnpy.app.cta_backtester import CtaBacktesterApp
 from vnpy.app.algo_trading import AlgoTradingApp,AlgoEngine
 from vnpy.trader.constant import Direction, Offset
@@ -28,6 +28,7 @@ import vnpy.trader.rqdata as rq
 from vnpy.trader.object import HistoryRequest
 from vnpy.gateway.hbdm.hbdm_gateway import HbdmGateway,symbol_type_map
 from vnpy.gateway.bitmex.bitmex_gateway import BitmexGateway
+from vnpy.gateway.tiger.tiger_gateway import TigerGateway
 from vnpy.trader.constant import Exchange, Interval
 from vnpy.trader.algorithm import Algorithm
 
@@ -69,7 +70,7 @@ g_mark_color = {
     Offset.CLOSEYESTERDAY:colors.named.green
 }
 
-g_tools="pan,xwheel_zoom,ywheel_zoom,reset,wheel_zoom"
+g_tools="pan,xwheel_zoom,reset,wheel_zoom"
 
 class BacktesterApp:
     
@@ -142,12 +143,12 @@ class BacktesterApp:
                                  Interval.MINUTE,
                                  start_date,
                                  end_date,
-                                 rate=2.9/10000, # 手续费
+                                 rate=2.9/1000, # 手续费
                                  slippage=0.2,   # 滑点
                                  size=1,         # 合约乘数
                                  pricetick=0.01, # 价格跳动
-                                 capital=100000, # 资金
-                                 setting={"ma_window":120, "wave_window":self.wave_window, "bar_min":1, "tracker":self.tracker}      # 策略设置
+                                 capital=10000, # 资金
+                                 setting={"capital":10000, "ma_window":120, "wave_window":self.wave_window, "bar_min":1, "tracker":self.tracker}      # 策略设置
                                  )
         bar_data = self.get_bar_data()
         self.date_index = {}
@@ -384,6 +385,8 @@ class BacktesterApp:
 
     def plot_trade_degline(self):
         # bar_data = self.get_bar_data()
+        if "trade_info" not in self.tracker:
+            return
         dt_index = []
         y_fit = []
         dt_index_full = []
@@ -456,16 +459,13 @@ class BacktesterApp:
     def show(self):
         self.plot.legend.location = "top_right"
         self.plot.legend.click_policy="hide"
-        
-        if self.strategy.find("MaLevelTrackStrategy") != -1 or \
-           self.strategy.find("PatternScoreStrategy") != -1 or \
-           self.strategy.find("ReverseCatchStrategy") != -1:
-            self.plot_ma_tag()
-            self.plot_trade_degline()
-        elif self.strategy == "Kdj120MaStrategy":
+        if self.strategy == "Kdj120MaStrategy":
             # self.plot_wave()
             self.plot_trade_wave()
-        self.plot_kdj()
+        self.plot_ma_tag()
+        self.plot_trade_degline()
+
+        # self.plot_kdj()
         self.plot_tarde_mark()
         self.plot.xaxis.major_label_overrides = self.date
         self.plot_second.xaxis.major_label_overrides = self.date
@@ -493,8 +493,10 @@ if __name__ == "__main__":
 
     strategy_test = BacktesterApp()
     start_date = datetime.datetime(2019,8,2,20)
-    end_date = datetime.datetime(2019,9,13,20)
-    stock = "goog.SMART"
+    # end_date = datetime.datetime.now()
+    end_date = datetime.datetime(2019,8,16,20)
+    stock_ls = ["fb.SMART","amd.SMART", "tsla.SMART", "msft.SMART", "aapl.SMART", "pdd.SMART", "amzn.SMART", "baba.SMART"]
+    stock = stock_ls[0]
     algo_setting= {
         "vt_symbol": "",
         "direction": Direction.LONG.value,
@@ -505,22 +507,23 @@ if __name__ == "__main__":
     algo_setting["template_name"] = "ArbitrageAlgo"
     # strategy_test.start_algo(algo_setting)
     # strategy_test.download(stock, start_date, end_date)
-    strategy_list = ["MaLevelTrackStrategy", "PatternScoreStrategy", "BollChannelStrategy", "ReverseCatchStrategy"]
-
-    strategy_test.start_backtester(strategy_list[3], stock, start_date, end_date)
+    strategy_list = ["MaLevelTrackStrategy", "PatternScoreStrategy", "BollChannelStrategy", "ReverseCatchStrategy", "MaTrendStrategy"]
+    l = datetime.datetime.now()
+    strategy_test.start_backtester(strategy_list[4], stock, start_date, end_date)
+    r = datetime.datetime.now()
     # close = strategy_test.close
     # close = np.array(close)
     # calc_regress_deg(close)
     width=1800
     height=600
-    # strategy_test.init_plot(width=width, height=height)
-    strategy_test.init_plot()
+    strategy_test.init_plot(width=width, height=height)
+    # strategy_test.init_plot()
     strategy_test.statistics()
     strategy_test.plot_kline()
     ma_line = [10, 20, 30, 60, 120]
     # ma_line = [5, 10, 30, 60, 120]
     strategy_test.plot_ma_line(ma_line)
     strategy_test.show()
-    # download3()
+    print("总耗时",r - l)
 
 

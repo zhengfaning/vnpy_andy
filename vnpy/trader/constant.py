@@ -87,7 +87,9 @@ class Exchange(Enum):
     SZSE = "SZSE"           # Shenzhen Stock Exchange
     SGE = "SGE"             # Shanghai Gold Exchange
     WXE = "WXE"             # Wuxi Steel Exchange
-
+    ECBOT = "ECBOT"
+    CFE = "CFE"
+    CMECRYPTO = "CMECRYPTO"
     # Global
     SMART = "SMART"         # Smart Router for US stocks
     NYMEX = "NYMEX"         # New York Mercantile Exchange

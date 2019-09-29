@@ -3,7 +3,7 @@ from tigeropen.common.consts import Language
 from tigeropen.tiger_open_config import TigerOpenClientConfig
 from tigeropen.common.util.signature_utils import read_private_key
 
-rsa_private_key = read_private_key('./money/rsa_private_key.pem')
+rsa_private_key = read_private_key('../money/rsa_private_key.pem')
 
 def get_client_config():
     """

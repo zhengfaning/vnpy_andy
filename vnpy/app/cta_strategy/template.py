@@ -1,4 +1,5 @@
 """"""
+
 from abc import ABC
 from copy import copy
 from typing import Any, Callable
@@ -397,3 +398,5 @@ class TargetPosTemplate(CtaTemplate):
                 else:
                     vt_orderids = self.short(short_price, abs(pos_change))
             self.vt_orderids.extend(vt_orderids)
+
+

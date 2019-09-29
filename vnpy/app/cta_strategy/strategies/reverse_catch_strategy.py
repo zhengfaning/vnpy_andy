@@ -1,5 +1,7 @@
 from vnpy.app.cta_strategy import (
     CtaTemplate,
+    CtaSignal,
+    TargetPosTemplate,
     StopOrder,
     TickData,
     BarData,
@@ -69,27 +71,21 @@ class PatternRecord:
 
     def values(self):
         return self.data.values()
+
+
 class ClosePosType(Enum):
     SAFE_PRICE = 1
     TREND_CHANGE = 2
 
 
-class Position:
+class BasePosition():
     volumn: int = 0
-    level: int = 0
     close_price: float = 0.0
     buy_price: float = 0
-    safe_price: float = 0
-    order_data = np.array([])
-    # 形态预测出错修正,日后增设级别在3以上才执行
-    last_close_info = None
-    guard = None
+    strategy = None
 
     def __init__(self, strategy):
-        self.strategy: ReverseCatchStrategy = strategy
-        # self.am = self.strategy.am
-        self.ma_tag = self.strategy.ma_tag
-        self.close_process = [self.close1, self.close_ma120]
+        self.strategy = strategy
 
     def buy(self, price: float, volume: float, lock: bool = False, type: OrderType = OrderType.MARKET):
         """
@@ -115,20 +111,45 @@ class Position:
         """
         return self.strategy.send_order(Direction.LONG, Offset.CLOSE, price, volume, lock, type)
 
-    def close1(self, bar:BarData, calc_data):
-        if self.volumn < 0:
-            if bar.close_price > self.close_price:
-                calc_data["trade_close"] = "平仓:到达最低价{}".format(self.close_price)
-                return self.strategy.cover(self.close_price, abs(self.volumn), type=OrderType.MARKET,
-                       extra= { "reason":"平仓:到达最低价{}".format(self.close_price)})
-                 
-        elif self.volumn > 0:
-            if bar.close_price < self.close_price:
-                calc_data["trade_close"] = "平仓:到达最低价{}".format(self.close_price)
-                return self.strategy.sell(self.close_price, abs(self.volumn), type=OrderType.MARKET,
-                       extra={"reason": "平仓:到达最低价{}".format(self.close_price)})
+    def on_trade(self, trade: TradeData):
+        """
+        Callback of new trade data update.
+        """
+        # pre_volumn = 0
+        if trade.direction == Direction.LONG:
+            if self.volumn == 0:
+                self.on_vol_reset(trade)
+            self.volumn += trade.volume
+            
+        elif trade.direction == Direction.SHORT:
+            if self.volumn == 0:
+                self.on_vol_reset(trade)
+            self.volumn -= trade.volume
 
-    def close_ma120(self, bar:BarData, calc_data):
+        elif trade.direction == Direction.NET:
+            self.volumn = trade.volume
+
+    def on_vol_reset(self, trade: TradeData):
+        pass
+
+    def on_order(self, order: OrderData):
+        pass
+
+
+class Ma120Position():
+
+    order_data = np.array([])
+    safe_price_offset = 0
+    # 形态预测出错修正,日后增设级别在3以上才执行
+
+    def __init__(self, strategy, setting):
+        self.strategy: ReverseCatchStrategy = strategy
+        self.safe_price_offset = setting["safe_price_offset"]
+        self.ma_lvl = setting["ma_lvl"]
+        # self.am = self.strategy.am
+    
+    def on_bar(self, bar:BarData, calc_data):
+        self.order_data = np.append(self.order_data, bar)
         if not (self.volumn < 0 and bar.close_price < self.safe_price or \
                 self.volumn > 0 and bar.close_price > self.safe_price):
                 return
@@ -149,7 +170,7 @@ class Position:
                 return self.strategy.short(bar.close_price, 50, type=OrderType.MARKET) 
             
 
-        for lvl in self.strategy.ma_level[-1:]:
+        for lvl in self.ma_lvl[-1:]:
             if len(self.order_data) < lvl:
                 close_price = am.sma(lvl, array=False, length=lvl+1)
                 break
@@ -173,104 +194,77 @@ class Position:
                 return self.strategy.sell(bar.close_price, abs(self.volumn), type=OrderType.MARKET,
                        extra={"reason": "平仓:到达MA均线价{}".format(close_price)})
 
-    
-    def close2(self, bar:BarData, calc_data):
-        
-        if self.level > 0:
-            self.order_data = np.append(self.order_data, bar.close_price)
-            order_id = None
-            offset = -40
-            offset_m = int(offset / 2)
-
-            
-            deg_full = calc_regress_deg(self.strategy.am.close[-10 :], False)
-            
-            if len(self.order_data) > abs(offset * 1.5):
-                y_fit = reg_util.regress_y_polynomial(self.order_data, zoom=True)
-                deg_order_short = calc_regress_deg(y_fit[:abs(offset)], False)
-
-            if self.volumn > 0:
-                if deg_full < -0.01:
-                    # if abs(deg_order_short) < abs(deg_full):
-                        return self.strategy.sell(bar.close_price, abs(self.volumn), type=OrderType.MARKET, 
-                                extra={"reason":"平仓:趋势趋弱,deg={}".format(deg_full)})
-
-
-            elif self.volumn < 0:
-                if deg_full > 0.01:
-                    # if abs(deg_order_short) < abs(deg_full):
-                        return self.strategy.cover(bar.close_price, abs(self.volumn), type=OrderType.MARKET, 
-                        extra={"reason": "平仓:趋势趋弱,deg={}".format(deg_full)})
-
-            # print("pos<0", deg_order_short, deg_full)
-
-
-    def on_strategy(self, bar:BarData, calc_data):
-        if self.volumn == 0:
-            return 
-        
-        if self.level == 0:
-            if self.volumn > 0 and bar.close_price > self.safe_price:
-                self.level += 1
-            elif self.volumn < 0 and bar.close_price < self.safe_price:
-                self.level += 1
-
-        offset = -40
-        calc_nums = np.array(self.ma_tag[-offset:-1])
-                # var_val = np.var(calc_nums)
-        std_val = np.std(calc_nums)
-        mean_val = np.mean(calc_nums)
-        
-        if self.level == 1 and std_val < 0.8:
-            # self.strategy.ma_tag[-1] > 3
-            # level += 1
-            if self.volumn > 0 and mean_val > 3.8:
-                self.level += 1
-            elif self.volumn < 0 and mean_val < 1.2:
-                self.level += 1
-
-        order_id = None 
-
-        for close_process in self.close_process:
-            order_id = close_process(bar, calc_data)
-            if order_id is not None:
-                break
-
-        return order_id
-            # # print(deg)
-            # if abs(deg_order_short) < abs(deg_full):
-            #     order_id = self.strategy.cover(bar.close_price, 1) 
-    def on_trade(self, trade: TradeData):
-        """
-        Callback of new trade data update.
-        """
-        self.put_event()
-
 
     def on_order(self, order: OrderData):
-        if order.status == Status.ALLTRADED:
-            # pre_volumn = 0
-            if order.direction == Direction.LONG:
-                if self.volumn == 0:
-                    self.close_price = round(order.price * 0.998, 2)
-                    self.safe_price = order.price * 1.005
-                    self.buy_price = order.price
-                    self.order_data = np.array([])
-                    self.level = 0
-                self.volumn += order.volume
-                
-            elif order.direction == Direction.SHORT:
-                if self.volumn == 0:
-                    self.close_price = round(order.price * 1.002, 2)
-                    self.order_data = np.array([])
-                    self.buy_price = order.price
-                    self.safe_price = order.price * 0.995
-                    self.level = 0
-                self.volumn -= order.volume
+        pass
 
-            elif order.direction == Direction.NET:
-                self.volumn = order.volume
-            
+
+    def on_vol_reset(self, trade: TradeData):
+
+        if trade.direction == Direction.LONG:
+            self.trade_price = trade.price
+            self.order_data = np.array([])
+            self.safe_price = trade.price
+        elif trade.direction == Direction.SHORT:
+            scale = 1 + self.closeout_offset
+            self.close_price = round(trade.price * scale, 2)
+            self.order_data = np.array([])
+            self.trade_price = trade.price
+
+class CloseoutPosition(BasePosition):
+    volumn: int = 0
+    level: int = 0
+    closeout_price: float = 0.0
+    trade_price: float = 0
+    safe_price: float = 0
+    order_data = np.array([])
+    # 形态预测出错修正,日后增设级别在3以上才执行
+    last_close_info = None
+    guard = None
+
+    def __init__(self, strategy, setting):
+        self.strategy: ReverseCatchStrategy = strategy
+        # self.am = self.strategy.am
+        self.closeout_offset = setting["closeout_offset"]
+
+    def set_closeout_price(self, price):
+        self.closeout_price = price
+
+    def set_closeout_offset(self, offset):
+        self.closeout_offset = offset
+
+    def on_bar(self, am:ArrayManager, bar:BarData, calc_data):
+        if self.volumn < 0:
+            if bar.close_price > self.closeout_price:
+                calc_data["trade_close"] = "平仓:到达最低价{}".format(self.closeout_price)
+                return self.cover(bar.close_price, abs(self.volumn), type=OrderType.MARKET,
+                       extra= { "reason":"平仓:到达最低价{}".format(self.close_price)})
+                 
+        elif self.volumn > 0:
+            if bar.close_price < self.closeout_price:
+                calc_data["trade_close"] = "平仓:到达最低价{}".format(self.close_price)
+                return self.sell(bar.close_price, abs(self.volumn), type=OrderType.MARKET,
+                       extra={"reason": "平仓:到达最低价{}".format(self.close_price)})
+
+    def on_vol_reset(self, trade: TradeData):
+
+        if trade.direction == Direction.LONG:
+            scale = 1 - self.closeout_offset
+            self.trade_price = trade.price
+            self.close_price = round(trade.price * scale, 2)
+            self.trade_price = trade.price
+            self.order_data = np.array([])
+        elif trade.direction == Direction.SHORT:
+            scale = 1 + self.closeout_offset
+            self.close_price = round(trade.price * scale, 2)
+            self.order_data = np.array([])
+            self.trade_price = trade.price
+
+
+@dataclass
+class MaTrendRecord:
+    close = []
+    std_val = 0
  
 ''' 
     TODO: 加入每日时间识别
@@ -297,6 +291,9 @@ class ReverseCatchStrategy(CtaTemplate):
     kdj_record = []
     parameters = ["ma_level"]
     variables = ["fast_ma0", "fast_ma1", "slow_ma0", "slow_ma1"]
+    add_pos = False
+    safe_price = None
+    trend_record = MaTrendRecord
 
     def __init__(self, cta_engine, strategy_name, vt_symbol, setting):
         """"""
@@ -310,14 +307,14 @@ class ReverseCatchStrategy(CtaTemplate):
         self.am5 = ArrayManager(120)
         self.bg5 = BarGenerator(self.on_bar, 5, self.on_5min_bar)
         self.order_data = None
-        self.positions = Position(self)
+        self.positions = CloseoutPosition(self, {"closeout_offset": 0.003})
         self.std_range = IntervalGen(np.std,5)
         self.std_range3 = IntervalGen(np.std,5)        
         self.std_range5 = IntervalGen(np.std,5)
         self.pattern_record = PatternRecord()
         # self.pattern_record.set_expiry([KlinePattern.CDLEVENINGSTAR], 3)
         self.pattern_record.set_expiry(list(KlinePattern), 1)
-        
+        self.ma_info = []
         
         five_min_open_5 = partial(self.reverse_shape_strategy, setting={"len":20, "atr":10, "atr_valve":0.8, "mid_sign":(7,14)})
         self.open_strategy = {
@@ -401,14 +398,14 @@ class ReverseCatchStrategy(CtaTemplate):
                     u_tag = pos
                     if d_tag:
                         diff = r[start_pos] - r[d_tag]
-                        if abs(diff / r[start_pos]) > window and d_tag - start_pos > 1:
+                        if abs(diff / r[start_pos]) > window and d_tag - start_pos > 4:
                             end_tag = d_tag
                             
                 elif now > r[pos]:
                     d_tag = pos
                     if u_tag:
                         diff = r[start_pos] - r[u_tag]
-                        if abs(diff / r[start_pos]) > window and d_tag - start_pos > 1:
+                        if abs(diff / r[start_pos]) > window and d_tag - start_pos > 4:
                             end_tag = u_tag
 
                 if end_tag is not None:
@@ -496,24 +493,46 @@ class ReverseCatchStrategy(CtaTemplate):
                 if mean_val2 <= (mean - 1):
                     return self.short(bar.close_price, 1, type=OrderType.MARKET)
 
-    
-    def open2(self, am:ArrayManager, bar:BarData, calc_data):
-        deg = calc_data["deg20"]
-        ma = self.ma_tag[-1]
-        if deg > 0.5 and ma > 3 and self.am5.range[-1] > -0.002:
-            return self.buy(bar.close_price, 1, type=OrderType.MARKET)
-        elif deg < -0.5 and ma < 2 and self.am5.range[-1] < 0.002:
-            return self.short(bar.close_price, 1, type=OrderType.MARKET)  
-
-    def open1(self, am:ArrayManager, bar:BarData, calc_data):
+    def ma_trend_strategy(self, am:ArrayManager, bar:BarData, calc_data, setting={"len":40, "atr":40, "atr_valve":0.09, "mid_sign":(10,30)}):
         
-        mean = calc_data["mean30_10"]
-        mean_val2 = calc_data["mean10"]
-        # if std_val2 < 0.2: 
-        if mean_val2 > 3.5 and mean_val2 >= (mean + 2):
-                return self.buy(bar.close_price, 1, type=OrderType.MARKET)
-        elif mean_val2 < 1.5 and mean_val2 <= (mean - 2):
-                return self.short(bar.close_price, 1, type=OrderType.MARKET)
+        # 60个bar后取消
+        if self.trend_record.std_val is not None:
+            if len(self.trend_record.close) >= 60:
+                self.trend_record.close = []
+                self.trend_record.std_val = None
+            else:
+                self.trend_record.close.append(bar.close_price)
+            
+            
+        # 如果有新的bar,则覆盖
+        ma5_std = self.ma_info[-1]["ma5"]
+        if ma5_std <= 0.16:
+            self.trend_record.close = []
+            self.trend_record.std_val = ma5_std
+            return
+        
+
+        if  self.trend_record.std_val is not None and \
+            ma5_std > 0.8:
+            y_fit = reg_util.regress_y_polynomial(self.trend_record.close, zoom=True)
+            deg = calc_regress_deg(y_fit[:10], False)
+
+            if deg < 0:
+                # if k < 20 and d < 10 and j < 10:
+                # if kdj[2] < 10:
+                if self.pos == 0:
+                    calc_data["trade_open"] = "开空,deg={}".format(deg)
+                    return self.short(bar.close_price, 1, type=OrderType.MARKET)
+
+            else:
+                # if k > 80 and d > 90 and j > 90:
+                # if kdj[2] > 90:
+                if self.pos == 0:
+                    calc_data["trade_open"] = "开多,deg={}".format(deg)
+                    return self.buy(bar.close_price, 1, type=OrderType.MARKET)
+
+
+
 
     # v形反转捕获
     def reverse_shape_strategy(self, am:ArrayManager, bar:BarData, calc_data, setting={"len":40, "atr":40, "atr_valve":0.09, "mid_sign":(10,30)}):
@@ -550,8 +569,137 @@ class ReverseCatchStrategy(CtaTemplate):
         start_pos = np.where(close == start_val)[0][0]
         l = mid_pos - start_pos
         
+        # pos2 = np.where(close == min_val)[0][0]
+        kdj = am.kdj()
+        k = kdj["k"][-1]
+        d = kdj["d"][-1]
+        j = kdj["j"][-1]
+        x_fit = reg_util.regress_y_polynomial(close[:mid_pos], zoom=True)
+        deg1_remake = calc_regress_deg(x_fit[:abs(mid_pos)], False)
+        y_fit = reg_util.regress_y_polynomial(close[mid_pos:], zoom=True)
+        deg2_remake = calc_regress_deg(y_fit[:abs(mid_pos)], False)
+        # print(start_pos, mid_pos, deg1, deg2, deg1_remake, deg2_remake, l, start_val, mid_val)
+        cci = am.cci(20)
+        ma60 = am.sma(60)
+        if deg2 < 0:
+            # if k < 20 and d < 10 and j < 10:
+            # if kdj[2] < 10:
+            
+            if cci < -100 and bar.close_price < ma60:
+                if self.pos == 0:
+                   calc_data["trade_open"] = "开空,deg={},cci={}".format(deg2, cci)
+                   return self.short(bar.close_price, 1, type=OrderType.MARKET)
+                elif self.pos > 0:
+                   order_id_cover = self.sell(bar.close_price, abs(self.volumn), type=OrderType.MARKET)
+                   order_id_buy = self.short(bar.close_price, 1, type=OrderType.MARKET)
+                   return order_id_cover.extend(order_id_buy)
+        else:
+            # if k > 80 and d > 90 and j > 90:
+            # if kdj[2] > 90:
+            if cci > 100 and bar.close_price > ma60:
+                
+                if self.pos == 0:
+                    calc_data["trade_open"] = "开多,deg={},cci={}".format(deg2, cci)
+                    return self.buy(bar.close_price, 1, type=OrderType.MARKET)
+                elif self.pos < 0:
+                    order_id_cover = self.cover(bar.close_price, abs(self.volumn), type=OrderType.MARKET)
+                    order_id_buy = self.buy(bar.close_price, 1, type=OrderType.MARKET)
+                    return order_id_cover.extend(order_id_buy)
+
+        # print("找到大v形:", deg1, deg2 )
+
+    def ma120_close(self, am:ArrayManager, bar:BarData, calc_data):
+        
+        if self.safe_price is None:
+            return
+
+        rg = (bar.close_price / self.buy_price) - 1
+
+        close_price = None
+        if rg > 0.01 and self.volumn > 0:
+            close_price = am.sma(120)
+        elif rg < -0.01 and self.volumn < 0:
+            close_price = am.sma(120)
+            
+
+        for lvl in self.ma_lvl[-1:]:
+            # if len(self.order_data) < lvl:
+            close_price = am.sma(lvl)
+            break
+        
+
+        if close_price is None:
+            lvl = self.ma_level[-1]
+            close_price = am.sma(lvl)
+
+        
+        
+        if self.volumn < 0:
+            if bar.close_price > close_price:
+                calc_data["trade_close"] = "平仓:到达MA均线价{}".format(close_price)
+                return self.strategy.cover(bar.close_price, abs(self.volumn), type=OrderType.MARKET,
+                       extra= { "reason":"平仓:到达MA均线价{}".format(close_price)})
+                 
+        elif self.volumn > 0:
+            if bar.close_price < close_price:
+                calc_data["trade_close"] = "平仓:到达MA均线价{}".format(close_price)
+                return self.strategy.sell(bar.close_price, abs(self.volumn), type=OrderType.MARKET,
+                       extra={"reason": "平仓:到达MA均线价{}".format(close_price)})
 
 
+    
+    def add_position(self, am:ArrayManager, bar:BarData, calc_data, setting={}):
+
+        if self.safe_price is None:
+            return
+
+        if not (self.volumn < 0 and bar.close_price < self.safe_price or \
+                self.volumn > 0 and bar.close_price > self.safe_price):
+            return
+
+        am = self.am
+        rg = (bar.close_price / self.trade_price) - 1
+
+        close_price = None
+        if rg > 0.01 and self.volumn > 0:
+            close_price = am.sma(120)
+            if not self.add_pos:
+                self.add_pos = True
+                return self.strategy.buy(bar.close_price, 50, type=OrderType.MARKET) 
+        elif rg < -0.01 and self.volumn < 0:
+            close_price = am.sma(120)
+            if not self.add_pos:
+                self.add_pos = True
+                return self.strategy.short(bar.close_price, 50, type=OrderType.MARKET) 
+
+    def reverse2_strategy(self, am:ArrayManager, bar:BarData, calc_data, setting={"len":40, "atr":40, "atr_valve":0.09, "mid_sign":(10,30)}):
+        length = 30
+        offset1 = -30
+        offset2 = int(-10)
+        close = am.close
+        deg1 = calc_regress_deg(close[-30:-8], False)
+        deg2 = calc_regress_deg(close[-8:], False)
+        
+
+        if deg1 > 0 and deg2 > 0 or \
+           deg1 < 0 and deg2 < 0:
+            return
+        
+        if not (abs(deg1) > 0.15 and abs(deg2) > 0.15 and (abs(deg1) + abs(deg2)) > 0.35) :
+            return
+
+        close = am.close[-length:]
+        min_val = np.min(close)
+        max_val = np.max(close)
+        mid_val =  max_val if deg1 > 0 else min_val
+        mid_pos = np.where(close == mid_val)[0][0]
+
+        if mid_pos < setting["mid_sign"][0] or mid_pos > setting["mid_sign"][1]:
+            return
+
+        start_val = np.min(close[:mid_pos]) if deg1 > 0 else np.max(close[:mid_pos])
+        start_pos = np.where(close == start_val)[0][0]
+        l = mid_pos - start_pos
 
         # pos2 = np.where(close == min_val)[0][0]
         kdj = am.kdj()
@@ -574,8 +722,10 @@ class ReverseCatchStrategy(CtaTemplate):
                    calc_data["trade_open"] = "开空,deg={},cci={}".format(deg2, cci)
                    return self.short(bar.close_price, 1, type=OrderType.MARKET)
                 elif self.pos > 0:
-                   calc_data["trade_close"] = "平多,deg={},cci={}".format(deg2, cci)
-                   return self.sell(bar.close_price, self.pos, type=OrderType.MARKET)
+                   calc_data["trade_close"] = "平多后做空仓,deg={},cci={}".format(deg2, cci)
+                   order_id_cover = self.sell(bar.close_price, abs(self.volumn), type=OrderType.MARKET)
+                   order_id_buy = self.short(bar.close_price, 1, type=OrderType.MARKET)
+                   return order_id_cover.extend(order_id_buy)
         else:
             # if k > 80 and d > 90 and j > 90:
             # if kdj[2] > 90:
@@ -585,10 +735,10 @@ class ReverseCatchStrategy(CtaTemplate):
                     calc_data["trade_open"] = "开多,deg={},cci={}".format(deg2, cci)
                     return self.buy(bar.close_price, 1, type=OrderType.MARKET)
                 elif self.pos < 0:
-                    calc_data["trade_close"] = "平空,deg={},cci={}".format(deg2, cci)
-                    return self.cover(bar.close_price, self.pos, type=OrderType.MARKET)
-
-        # print("找到大v形:", deg1, deg2 )
+                    calc_data["trade_close"] = "平空后多仓,deg={},cci={}".format(deg2, cci)
+                    order_id_cover = self.cover(bar.close_price, abs(self.volumn), type=OrderType.MARKET)
+                    order_id_buy = self.buy(bar.close_price, 1, type=OrderType.MARKET)
+                    return order_id_cover.extend(order_id_buy)
 
 
 
@@ -655,12 +805,16 @@ class ReverseCatchStrategy(CtaTemplate):
 
         wave = self.wave(am.close[-30:])
         wave_r_sum = np.sum(wave["range"])
+
+
         macd=am.macd(20,40, 16)
         calc_data = (dict(
+                ma_info=self.ma_info[-1:],
                 kdj=[round(kdj_val["k"][-1],2),round(kdj_val["d"][-1],2),round(kdj_val["j"][-1],2)],
                 cci_20=am.cci(20),rsi=am.rsi(20),adx=am.adx(20),boll=am.boll(20, 3.4),
                 macd=[round(macd[0],2),round(macd[1],2),round(macd[2],2)],
-                deg40_20=round(deg1,2), deg20_0=round(deg2,2), deg20_10=round(calc_regress_deg(am.close[-20:-10], False),2), deg10_0=round(deg3,2),
+                deg40_20=round(deg1,2), deg20_0=round(deg2,2), deg20_10=round(calc_regress_deg(am.close[-20:-10], False),2), 
+                deg30_10=round(calc_regress_deg(am.close[-30:-10], False),2),deg10_0=round(deg3,2),
                 deg30_15=round(calc_regress_deg(am.close[-30:-15], False),2), deg15_0=round(calc_regress_deg(am.close[-15:], False),2),deg_f=round(deg_full,2),
                 atr=round(am.atr(10, length=15), 3), tr=round(am.atr(1, length=2), 3),atr_40=round(am.atr(40, length=42), 3),
                 time=bar.datetime, price=bar.close_price, ma=round(ma, 2), 
@@ -678,7 +832,7 @@ class ReverseCatchStrategy(CtaTemplate):
                 wave_cnt=len(wave), wave_r_sum=wave_r_sum, atr_mean=np.mean(am.atr(20, array=True,length=240)[-200:]),
                 kdj_record=self.kdj_record[-10:],
                 ))
-        if has_kdj_recore:
+        if self.ma_info[-1]["ma5"] <= 0.16:
             calc_data["kdj_key"] = True
         return calc_data
 
@@ -725,12 +879,13 @@ class ReverseCatchStrategy(CtaTemplate):
                 ma120t_sum=np.sum(self.ma120_track_list[-20:-1] + [self.ma120_track]), 
                 ma120t_mean=np.mean(self.ma120_track_list[-20:-1] + [self.ma120_track]),
                 ma120t_std=np.std(self.ma120_track_list[-20:-1] + [self.ma120_track]),
+                ma_info=list(map(lambda x:x["std"], self.ma_info[-1:])),
                 wave_cnt=len(wave), wave_r_sum=wave_r_sum, atr_mean=np.mean(am.atr(20, array=True,length=240)[-200:])
                 ))
 
         return calc_data
 
-    def on_strategy(self, am:ArrayManager, bar: BarData, strategy_list, calc_data=None):
+    def on_strategy(self, am:ArrayManager, bar: BarData, strategy_list, close_strategy_list, calc_data=None):
         
             
         order_id = None
@@ -741,7 +896,10 @@ class ReverseCatchStrategy(CtaTemplate):
             order_id = open_strategy(am, bar, calc_data)
 
         if order_id is None and self.pos != 0:
-            order_id = self.positions.on_strategy(bar, calc_data)
+            for strategy in close_strategy_list:
+                if order_id is not None:
+                    break
+                order_id = strategy(am, bar, calc_data)
 
         
         if order_id is not None:
@@ -753,10 +911,42 @@ class ReverseCatchStrategy(CtaTemplate):
         
         if self.tracker is not None:
             self.tracker["ma_tag_ls"].append(calc_data)
+
+    def ma_info_update(self, am:ArrayManager):
+        
+        ma_info = {}
+        ma_data = []
+        for i in self.ma_level:
+            ma = am.sma(i)
+            ma_info[i] = round(ma,2)
+            ma_data.append(ma)
+        
+        data = []
+        diff = ma_data[-1]
+        for v in ma_data:
+            data.append(round(v / diff, 6))
+
+        ma_info["ma5"] = round(np.var(data)*1000000, 8)
+
+        data = []
+        diff = ma_data[-3]
+        for v in ma_data[:-2]:
+            data.append(round(v / diff, 6))
+
+        ma_info["ma3"] = round(np.var(data)*1000000, 8)
+
+        if len(self.ma_info) < 500:
+            self.ma_info.append(ma_info)
+        else:
+            self.ma_info[:-1] = self.ma_info[1:]
+            self.ma_info[-1] = ma_info
+
     
     def on_1min_bar(self, bar: BarData):
         self.am.update_bar(bar)
         am = self.am
+        
+
         max_len = self.ma_level[-1] + 20
         data = self.am.close[-max_len:-1]
         ma_lvl = []
@@ -810,11 +1000,13 @@ class ReverseCatchStrategy(CtaTemplate):
 
         if not am.inited or not self.trading:
             return
-        
+
+        self.ma_info_update(am)
         calc_data = self.generate_data(am, bar)
         five_min_open_5 = partial(self.reverse_shape_strategy, setting={"len":20, "atr":10, "atr_valve":0.8, "mid_sign":(7,14)})
-        open_strategy = [self.reverse_shape_strategy]
-        self.on_strategy(am, bar, open_strategy, calc_data)
+        open_strategy = [self.reverse_shape_strategy, self.add_position]
+        close_strategy = [self.positions.on_bar, self.ma120_close]
+        self.on_strategy(am, bar, open_strategy, close_strategy, calc_data)
             # median_val = np.median(calc_nums)
         
         self.put_event()
@@ -840,28 +1032,25 @@ class ReverseCatchStrategy(CtaTemplate):
         print("{}产生了{},价格为{},笔数为{},交易{},pos={}".format(order.datetime.strftime("%m/%d %H:%M:%S"), order.offset.value + order.direction.value,order.price, order.volume, order.status.value, self.pos))
         
         if order.vt_orderid in self.request_order:
-
-            self.positions.on_order(order)
             if order.status == Status.ALLTRADED or order.status == Status.CANCELLED or order.status == Status.REJECTED:
-                if order.direction == Direction.LONG:
-                    self.volumn += order.volume
-                elif order.direction == Direction.SHORT:
-                    self.volumn -= order.volume
                 self.request_order.remove(order.vt_orderid)
-        # if order.status == Status.ALLTRADED or order.status == Status.PARTTRADED:
-        #     if order.direction == Direction.LONG:
-        #         if self.positions.volumn == 0:
-        #             self.positions.close_price = round(order.price * 0.995)
-        #         self.positions.volumn += order.volume
-        #     elif order.direction == Direction.SHORT:
-        #         self.positions.volumn -= order.volume
-        #     elif order.direction == Direction.NET:
-        #         self.positions.volumn = order.volume
+
 
     def on_trade(self, trade: TradeData):
         """
         Callback of new trade data update.
         """
+        if trade.vt_orderid in self.request_order:
+            self.positions.on_trade(trade)
+            if self.volumn == 0:
+                self.add_pos = False
+                
+                if trade.direction == Direction.LONG:
+                    self.safe_price = trade.price * 1.003
+                    self.volumn += trade.volume
+                elif trade.direction == Direction.SHORT:
+                    self.safe_price = trade.price * 0.997
+                    self.volumn -= trade.volume
         self.put_event()
 
     def on_stop_order(self, stop_order: StopOrder):

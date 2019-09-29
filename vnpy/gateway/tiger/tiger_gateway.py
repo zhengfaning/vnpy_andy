@@ -1,28 +1,25 @@
-"""
-Author: KeKe
-Please install tiger-api before use.
-pip install tigeropen
-"""
+# from vnpy.data.constant import Exchange
+from vnpy.trader.constant import Exchange
+import functools
+import traceback
 
 from copy import copy
+from time import sleep
+from pandas import DataFrame, merge
 from datetime import datetime
 from multiprocessing.dummy import Pool
 from queue import Empty, Queue
-import functools
-import traceback
-import time
-import pandas as pd
-from pandas import DataFrame
 
 from tigeropen.tiger_open_config import TigerOpenClientConfig
-from tigeropen.common.consts import Language, Currency, Market
+from tigeropen.common.consts import Language, Market, QuoteKeyType, SecurityType
 from tigeropen.quote.quote_client import QuoteClient
 from tigeropen.trade.trade_client import TradeClient
 from tigeropen.trade.domain.order import OrderStatus
 from tigeropen.push.push_client import PushClient
 from tigeropen.common.exceptions import ApiException
+from tigeropen.common.util.contract_utils import stock_contract, future_contract
 
-from vnpy.trader.constant import Direction, Product, Status, OrderType, Exchange
+from vnpy.trader.constant import Direction, Product, Status, OrderType
 from vnpy.trader.gateway import BaseGateway
 from vnpy.trader.object import (
     TickData,
@@ -71,8 +68,10 @@ STATUS_TIGER2VT = {
     OrderStatus.CANCELLED: Status.CANCELLED,
     OrderStatus.PENDING_CANCEL: Status.CANCELLED,
     OrderStatus.REJECTED: Status.REJECTED,
-    OrderStatus.EXPIRED: Status.NOTTRADED
+    OrderStatus.EXPIRED: Status.REJECTED
 }
+
+SANDBOX = False
 
 
 class TigerGateway(BaseGateway):
@@ -83,12 +82,20 @@ class TigerGateway(BaseGateway):
         "服务器": ["标准", "环球", "仿真"],
         "private_key": "",
     }
-
+    # 在 VNTRADER 中展示的交易所列表
     exchanges = [
         Exchange.SEHK,
         Exchange.SMART,
         Exchange.SSE,
-        Exchange.SZSE
+        Exchange.SZSE,
+        Exchange.CFE,
+        Exchange.ECBOT,
+        Exchange.CMECRYPTO,
+        Exchange.CFE,
+        Exchange.GLOBEX,
+        Exchange.NYMEX,
+        Exchange.SGX,
+        Exchange.HKFE
     ]
 
     def __init__(self, event_engine):
@@ -118,6 +125,9 @@ class TigerGateway(BaseGateway):
         self.contracts = {}
         self.symbol_names = {}
 
+        # {symbol NQ1909: (exchange, trading_contract)}
+        self.vt_tiger_symbol_map = {}
+
         self.push_connected = False
         self.subscribed_symbols = set()
 
@@ -129,6 +139,8 @@ class TigerGateway(BaseGateway):
                 func(*args)
             except Empty:
                 pass
+            except Exception:
+                self.write_log('方法%s调用失败，参数为%s' % (func.__name__, args))
 
     def add_task(self, func, *args):
         """"""
@@ -149,14 +161,11 @@ class TigerGateway(BaseGateway):
 
         # Put connect task into quque.
         self.init_client_config()
-        self.connect_quote()
-        self.connect_trade()
-        self.connect_push()
-        # self.add_task(self.connect_quote)
-        # self.add_task(self.connect_trade)
-        # self.add_task(self.connect_push)
+        self.add_task(self.connect_quote)
+        self.add_task(self.connect_trade)
+        self.add_task(self.connect_push)
 
-    def init_client_config(self, sandbox=False):
+    def init_client_config(self, sandbox=SANDBOX):
         """"""
         self.client_config = TigerOpenClientConfig(sandbox_debug=sandbox)
         self.client_config.private_key = self.private_key
@@ -170,7 +179,6 @@ class TigerGateway(BaseGateway):
         """
         try:
             self.quote_client = QuoteClient(self.client_config)
-            self.write_log("start get_symbol_names")
             self.symbol_names = dict(
                 self.quote_client.get_symbol_names(lang=Language.zh_CN))
             self.query_contract()
@@ -179,20 +187,17 @@ class TigerGateway(BaseGateway):
             return
 
         self.write_log("行情接口连接成功")
-        self.write_log("合约查询成功")
 
     def connect_trade(self):
         """
         Connect to trade server.
         """
+        self.write_log('查询交易接口')
         self.trade_client = TradeClient(self.client_config)
         try:
-            self.query_order()
-            self.query_position()
-            self.query_account()
-            # self.add_task(self.query_order)
-            # self.add_task(self.query_position)
-            # self.add_task(self.query_account)
+            self.add_task(self.query_order)
+            self.add_task(self.query_position)
+            self.add_task(self.query_account)
         except ApiException:
             self.write_log("交易接口连接失败")
             return
@@ -211,6 +216,7 @@ class TigerGateway(BaseGateway):
         self.push_client.position_changed = self.on_position_change
         self.push_client.order_changed = self.on_order_change
         self.push_client.connect_callback = self.on_push_connected
+        self.push_client.disconnect_callback = self.on_disconnected
 
         self.push_client.connect(
             self.client_config.tiger_id, self.client_config.private_key)
@@ -220,23 +226,32 @@ class TigerGateway(BaseGateway):
         self.subscribed_symbols.add(req.symbol)
 
         if self.push_connected:
-            self.push_client.subscribe_quote([req.symbol])
+            self.push_client.subscribe_quote(
+                symbols=[req.symbol], quote_key_type=QuoteKeyType.ALL)
 
     def on_push_connected(self):
         """"""
         self.push_connected = True
         self.write_log("推送接口连接成功")
 
-        self.push_client.subscribe_asset()
-        self.push_client.subscribe_position()
-        self.push_client.subscribe_order()
+        self.push_client.subscribe_asset(account=self.account)
+        self.push_client.subscribe_position(account=self.account)
+        self.push_client.subscribe_order(account=self.account)
 
         self.push_client.subscribe_quote(list(self.subscribed_symbols))
+
+    def on_disconnected(self):
+        self.write_log('推送接口断开链接')
+        self.push_connected = False
 
     def on_quote_change(self, tiger_symbol: str, data: list, trading: bool):
         """"""
         data = dict(data)
-        symbol, exchange = convert_symbol_tiger2vt(tiger_symbol)
+        symbol, exchange = self.get_vt_symbol_exchange(tiger_symbol)
+
+        # 如果只推送了时间戳，或只推送了timeline，不向策略中推送新的tick事件
+        if 'latest_price' not in data and 'bid_price' not in data:
+            return
 
         tick = self.ticks.get(symbol, None)
         if not tick:
@@ -245,21 +260,24 @@ class TigerGateway(BaseGateway):
                 exchange=exchange,
                 gateway_name=self.gateway_name,
                 datetime=datetime.now(),
-                name=self.symbol_names[symbol],
+                name=symbol,
             )
             self.ticks[symbol] = tick
-
+        # 本地止损单的设计依赖于limit up 与limit down（张跌停价格）。目前API中没有提供。
+        # 所以这里用high low 来代替 limit up 与limit down
         tick.datetime = datetime.fromtimestamp(int(data["timestamp"]) / 1000)
+        tick.volume = data.get("volume", tick.volume)
+        tick.ask_volume_1 = data.get("ask_size", tick.ask_volume_1)
+        tick.bid_volume_1 = data.get("bid_size", tick.bid_volume_1)
         tick.pre_close = data.get("prev_close", tick.pre_close)
         tick.last_price = data.get("latest_price", tick.last_price)
-        tick.volume = data.get("volume", tick.volume)
         tick.open_price = data.get("open", tick.open_price)
         tick.high_price = data.get("high", tick.high_price)
         tick.low_price = data.get("low", tick.low_price)
         tick.ask_price_1 = data.get("ask_price", tick.ask_price_1)
         tick.bid_price_1 = data.get("bid_price", tick.bid_price_1)
-        tick.ask_volume_1 = data.get("ask_size", tick.ask_volume_1)
-        tick.bid_volume_1 = data.get("bid_size", tick.bid_volume_1)
+        tick.limit_down = tick.low_price
+        tick.limit_up = tick.high_price
 
         self.on_tick(copy(tick))
 
@@ -268,10 +286,19 @@ class TigerGateway(BaseGateway):
         data = dict(data)
         if "net_liquidation" not in data:
             return
+        segment = data.get('segment')
+        # 环球账户， 只推送summary的信息，含股票期货
+        if segment == 'summary' or segment is None:
+            account = tiger_account
+        # 标准账户有『子账户』的概念， 分别推送股票与期货账户的信息
+        elif segment == 'S':
+            account = 'Security'
+        elif segment == 'C':
+            account = 'Commodity'
 
         account = AccountData(
-            accountid=tiger_account,
-            balance=data["net_liquidation"],
+            accountid=account,
+            balance=round(data["net_liquidation"], 2),
             frozen=0.0,
             gateway_name=self.gateway_name,
         )
@@ -279,8 +306,16 @@ class TigerGateway(BaseGateway):
 
     def on_position_change(self, tiger_account: str, data: list):
         """"""
+        if tiger_account != self.account:
+            return
         data = dict(data)
-        symbol, exchange = convert_symbol_tiger2vt(data["origin_symbol"])
+        # 处理标准与环球账户的差异, 环球的账户的期货信息要从originsymbol中获取，标准的从symbol中获取
+        origin_symbol = data.get("origin_symbol")
+        if origin_symbol:
+            symbol = origin_symbol2symbol(origin_symbol)
+        else:
+            symbol = data.get('symbol')
+        symbol, exchange = self.get_vt_symbol_exchange(symbol)
 
         pos = PositionData(
             symbol=symbol,
@@ -288,33 +323,41 @@ class TigerGateway(BaseGateway):
             direction=Direction.NET,
             volume=int(data["quantity"]),
             frozen=0.0,
-            price=data["average_cost"],
-            pnl=data["unrealized_pnl"],
+            price=round(data["average_cost"], 2),
+            pnl=round(data["unrealized_pnl"], 2),
             gateway_name=self.gateway_name,
         )
         self.on_position(pos)
 
     def on_order_change(self, tiger_account: str, data: list):
         """"""
+        # 处理订阅了多个账户的情况
+        if tiger_account != self.account:
+            return
         data = dict(data)
-        symbol, exchange = convert_symbol_tiger2vt(data["origin_symbol"])
+        origin_symbol = data.get("origin_symbol")
+        if origin_symbol:
+            symbol = origin_symbol2symbol(origin_symbol)
+        else:
+            symbol = data.get('symbol')
+        symbol, exchange = self.get_vt_symbol_exchange(symbol)
         status = STATUS_TIGER2VT[data["status"]]
-
+        order_time = data.get('order_time')
         order = OrderData(
             symbol=symbol,
             exchange=exchange,
             orderid=self.ID_TIGER2VT.get(
-                str(data["order_id"]), self.get_new_local_id()),
-            direction=Direction.NET,
+                str(data["id"]), self.get_new_local_id()),
+            direction=DIRECTION_TIGER2VT[data.get('action')],
             price=data.get("limit_price", 0),
             volume=data["quantity"],
             traded=data["filled"],
             status=status,
             time=datetime.fromtimestamp(
-                data["order_time"] / 1000).strftime("%H:%M:%S"),
+                order_time / 1000).strftime("%H:%M:%S") if order_time else datetime.now().strftime("%H:%M:%S"),
             gateway_name=self.gateway_name,
         )
-        self.ID_TIGER2VT[str(data["order_id"])] = order.orderid
+        self.ID_TIGER2VT[str(data["id"])] = order.orderid
         self.on_order(order)
 
         if status == Status.ALLTRADED:
@@ -323,13 +366,13 @@ class TigerGateway(BaseGateway):
             trade = TradeData(
                 symbol=symbol,
                 exchange=exchange,
-                direction=Direction.NET,
+                direction=DIRECTION_TIGER2VT[data.get('action')],
                 tradeid=self.tradeid,
-                orderid=self.ID_TIGER2VT[str(data["order_id"])],
+                orderid=self.ID_TIGER2VT[str(data["id"])],
                 price=data["avg_fill_price"],
                 volume=data["filled"],
                 time=datetime.fromtimestamp(
-                    data["trade_time"] / 1000).strftime("%H:%M:%S"),
+                    order_time / 1000).strftime("%H:%M:%S") if order_time else datetime.now().strftime("%H:%M:%S"),
                 gateway_name=self.gateway_name,
             )
             self.on_trade(trade)
@@ -349,27 +392,42 @@ class TigerGateway(BaseGateway):
 
     def _send_order(self, req: OrderRequest, local_id):
         """"""
-        currency = config_symbol_currency(req.symbol)
-        try:
-            contract = self.trade_client.get_contracts(
-                symbol=req.symbol, currency=currency)[0]
+        try:  # 主要处理一些API层面的校验带来的异常，如下单价格错误。
+            contract = self.get_trading_contract(req.symbol)
             order = self.trade_client.create_order(
                 account=self.account,
                 contract=contract,
                 action=DIRECTION_VT2TIGER[req.direction],
                 order_type=ORDERTYPE_VT2TIGER[req.type],
                 quantity=int(req.volume),
-                limit_price=req.price,
+                limit_price=round(req.price, 2),
             )
-            self.ID_TIGER2VT[str(order.order_id)] = local_id
-            self.ID_VT2TIGER[local_id] = str(order.order_id)
 
             self.trade_client.place_order(order)
+            self.ID_TIGER2VT[str(order.id)] = local_id
+            self.ID_VT2TIGER[local_id] = str(order.id)
+        except Exception:
+            # 一些订单会在API层面被拒掉，不会推送订单的回报，这里模拟一个订单回报。
+            # 目前gateway 只实现了mkt 和limit 两种类型的订单，使用其他类型的订单也会出现异常。
+            # 这时本地的订单已经存在了， 所以返回一个状态为rejected的虚拟订单
+            symbol = contract2symbol(order.contract)
+            symbol, exchange = self.get_vt_symbol_exchange(symbol)
 
-        except:  # noqa
-            traceback.print_exc()
+            mock_order = OrderData(
+                symbol=symbol,
+                exchange=exchange,
+                orderid=local_id,
+                direction=DIRECTION_TIGER2VT[order.action],
+                price=order.limit_price,
+                volume=order.quantity,
+                traded=0,
+                status=Status.REJECTED,
+                time=datetime.now().strftime("%H:%M:%S"),
+                gateway_name=self.gateway_name,
+            )
+            self.on_order(mock_order)
             self.write_log("发单失败")
-            return
+            traceback.print_exc()
 
     def cancel_order(self, req: CancelRequest):
         """"""
@@ -378,54 +436,59 @@ class TigerGateway(BaseGateway):
     def _cancel_order(self, req: CancelRequest):
         """"""
         try:
-            order_id = self.ID_VT2TIGER[req.orderid]
-            data = self.trade_client.cancel_order(order_id=order_id)
+            id = self.ID_VT2TIGER[req.orderid]
+            data = self.trade_client.cancel_order(id=id)
+            if not data:
+                self.write_log("撤单成功")
         except ApiException:
-            self.write_log(f"撤单失败：{req.orderid}")
-
-        if not data:
-            self.write_log("撤单成功")
+            self.write_log(f"撤单请求提交失败：{req.orderid}")
+            traceback.print_exc()
+        except Exception:
+            self.write_log('撤单失败，id:%s' % (req.orderid))
 
     def query_contract(self):
         """"""
+        self.write_log('开始查询合约信息')
         # HK Stock
-        
-        # symbols_names_HK = self.quote_client.get_symbol_names(
-        #     lang=Language.zh_CN, market=Market.HK)
-        # contract_names_HK = DataFrame(
-        #     symbols_names_HK, columns=["symbol", "name"])
+        # 查询的速度太慢了， 注释掉了
+        try:
+            symbols_names_HK = self.quote_client.get_symbol_names(
+                lang=Language.zh_CN, market=Market.HK)
+            contract_names_HK = DataFrame(
+                symbols_names_HK, columns=["symbol", "name"])
 
-        # contractList = list(contract_names_HK["symbol"])
-        # i, n = 0, len(contractList)
-        # result = pd.DataFrame()
-        # count = 1
-        # while i < n:
-        #     count += 1
-        #     i += 50
-        #     c = contractList[i - 50:i]
-        #     r = self.quote_client.get_trade_metas(c)
-        #     result = result.append(r)
-        #     if count % 10 == 0:
-        #         time.sleep(5)
+            contractList = list(contract_names_HK["symbol"])
+            i, n = 0, len(contractList)
+            result = DataFrame()
+            while i < n:
+                i += 50
+                c = contractList[i - 50:i]
+                r = self.quote_client.get_trade_metas(c)
+                result = result.append(r)
+                sleep(0.1)
+        except:
+            self.write_log('查询港股合约失败')
 
-        # contract_detail_HK = result.sort_values(by="symbol", ascending=True)
-        # contract_HK = pd.merge(
-        #     contract_names_HK, contract_detail_HK, how="left", on="symbol")
+        contract_detail_HK = result.sort_values(by="symbol", ascending=True)
+        contract_HK = merge(
+            contract_names_HK, contract_detail_HK, how="left", on="symbol")
 
-        # for ix, row in contract_HK.iterrows():
-        #     contract = ContractData(
-        #         symbol=row["symbol"],
-        #         exchange=Exchange.SEHK,
-        #         name=row["name"],
-        #         product=Product.EQUITY,
-        #         size=1,
-        #         min_volume=row["lot_size"],
-        #         pricetick=row["min_tick"],
-        #         net_position=True,
-        #         gateway_name=self.gateway_name,
-        #     )
-        #     self.on_contract(contract)
-        #     self.contracts[contract.vt_symbol] = contract
+        for ix, row in contract_HK.iterrows():
+            contract = ContractData(
+                symbol=row["symbol"],
+                exchange=Exchange.SEHK,
+                name=row["name"],
+                product=Product.EQUITY,
+                size=1,
+                min_volume=row["lot_size"],
+                pricetick=row["min_tick"],
+                net_position=True,
+                gateway_name=self.gateway_name,
+            )
+            self.on_contract(contract)
+            self.contracts[contract.vt_symbol] = contract
+            self.vt_tiger_symbol_map.update(
+                {contract.symbol: (Exchange.SEHK, stock_contract(contract.symbol, currency='HKD'))})
 
         # US Stock
         symbols_names_US = self.quote_client.get_symbol_names(
@@ -439,39 +502,59 @@ class TigerGateway(BaseGateway):
                 name=row["name"],
                 product=Product.EQUITY,
                 size=1,
-                min_volume=100,
+                min_volume=1,
                 pricetick=0.001,
                 gateway_name=self.gateway_name,
             )
             self.on_contract(contract)
+            self.vt_tiger_symbol_map.update(
+                {contract.symbol: (Exchange.SMART, stock_contract(
+                    contract.symbol, currency='USD'))}
+            )
             self.contracts[contract.vt_symbol] = contract
+        self.write_log('初始化美股合约完成')
 
-        # CN Stock
-        # symbols_names_CN = self.quote_client.get_symbol_names(
-        #     lang=Language.zh_CN, market=Market.CN)
-        # contract_CN = DataFrame(symbols_names_CN, columns=["symbol", "name"])
+        # Future contracts
+        exchanges = self.quote_client.get_future_exchanges(
+            sec_type=SecurityType.FUT, lang=Language.zh_CN)
+        exchanges_list = exchanges['code']
+        contract_futures = DataFrame()
+        for e in exchanges_list:
+            exchange_contract = self.quote_client.get_future_contracts(
+                e, lang=Language.zh_CN)
+            if len(exchange_contract) != 0:
+                contract_futures = contract_futures.append(exchange_contract)
 
-        # for ix, row in contract_CN.iterrows():
-        #     symbol = row["symbol"]
-        #     symbol, exchange = convert_symbol_tiger2vt(symbol)
-
-        #     contract = ContractData(
-        #         symbol=symbol,
-        #         exchange=exchange,
-        #         name=row["name"],
-        #         product=Product.EQUITY,
-        #         size=1,
-        #         min_volume=100,
-        #         pricetick=0.001,
-        #         gateway_name=self.gateway_name,
-        #     )
-        #     self.on_contract(contract)
-        #     self.contracts[contract.vt_symbol] = contract
+        for ix, row in contract_futures.iterrows():
+            contract = ContractData(
+                # symbol 用于查询存储数据 NQ1909
+                symbol=row.loc['contract_code'],
+                exchange=config_future_exchange(row.loc['exchange']),
+                name=row.loc['name'],
+                product=Product.FUTURES,
+                size=1,
+                min_volume=1,
+                pricetick=0.001,
+                gateway_name=self.gateway_name
+            )
+            self.on_contract(contract)
+            self.vt_tiger_symbol_map.update(
+                {contract.symbol: (contract.exchange,
+                                   future_contract(
+                                       symbol=row.type,
+                                       currency=row.currency,
+                                       expiry=row.last_trading_date,
+                                       exchange=row.exchange,
+                                       multiplier=row.multiplier,
+                                   ))}
+            )
+            self.contracts[contract.vt_symbol] = contract
+        self.write_log('初始化期货合约完成')
 
     def query_account(self):
-        """"""
+        self.write_log('开始查询账户信息')
         try:
-            assets = self.trade_client.get_assets()
+            assets = self.trade_client.get_assets(segment=True)
         except ApiException:
             self.write_log("查询资金失败")
             return
@@ -479,78 +562,128 @@ class TigerGateway(BaseGateway):
         for i in assets:
             account = AccountData(
                 accountid=self.account,
-                balance=i.summary.net_liquidation,
+                balance=round(i.summary.net_liquidation, 2),
+                frozen=0.0,
+                gateway_name=self.gateway_name,
+            )
+            # 下面两个账户仅作vntrader 展示使用。
+            # 环球账户的资产信息可以通过 summary 获取，标准账户需要区分股票和期货Segment， 且没有合并的summary信息。
+            sec_account = AccountData(
+                accountid='Security',
+                balance=round(i.segments.get('S').net_liquidation, 2),
+                frozen=0.0,
+                gateway_name=self.gateway_name,
+            )
+
+            com_account = AccountData(
+                accountid='Commodity',
+                balance=round(i.segments.get('C').net_liquidation, 2),
                 frozen=0.0,
                 gateway_name=self.gateway_name,
             )
 
             self.on_account(account)
+            self.on_account(sec_account)
+            self.on_account(com_account)
+        self.write_log('账户信息查询完成')
 
     def query_position(self):
         """"""
+        self.write_log('开始查询持仓信息')
         try:
-            position = self.trade_client.get_positions()
+            # 分别查询股票和期货的持仓
+            stock_position = self.trade_client.get_positions(
+                sec_type=SecurityType.STK)
+            future_position = self.trade_client.get_positions(
+                sec_type=SecurityType.FUT)
+            positions = stock_position + future_position
+
         except ApiException:
             self.write_log("查询持仓失败")
             return
 
-        for i in position:
-            symbol, exchange = convert_symbol_tiger2vt(i.contract.symbol)
+        for i in positions:
+            try:
+                # 标准账户里面的symbol 是origin symbol
+                symbol, exchange = self.get_vt_symbol_exchange(
+                    contract2symbol(i.contract))
 
-            pos = PositionData(
-                symbol=symbol,
-                exchange=exchange,
-                direction=Direction.NET,
-                volume=int(i.quantity),
-                frozen=0.0,
-                price=i.average_cost,
-                pnl=float(i.unrealized_pnl),
-                gateway_name=self.gateway_name,
-            )
+                pos = PositionData(
+                    symbol=symbol,
+                    exchange=exchange,
+                    direction=Direction.NET,
+                    volume=int(i.quantity),
+                    frozen=0.0,
+                    price=i.average_cost,
+                    pnl=float(i.unrealized_pnl),
+                    gateway_name=self.gateway_name,
+                )
 
-            self.on_position(pos)
+                self.on_position(pos)
+            except:
+                self.write_log('处理持仓失败，symbol: %s' % (i.contract.symbol))
+        self.write_log('持仓信息查询完成')
 
     def query_order(self):
-        """"""
+        self.write_log('开始查询历史订单信息')
         try:
-            data = self.trade_client.get_orders()
+            # 需要分别查询股票和期货的订单
+            stock_data = self.trade_client.get_orders(
+                account=self.account, sec_type=SecurityType.STK)
+            future_data = self.trade_client.get_orders(
+                account=self.account, sec_type=SecurityType.FUT)
+            data = stock_data + future_data
             data = sorted(data, key=lambda x: x.order_time, reverse=False)
-        except:  # noqa
+        except:
             traceback.print_exc()
-            self.write_log("查询委托失败")
+            self.write_log("查询订单失败")
             return
 
         self.process_order(data)
         self.process_deal(data)
+        self.write_log('历史订单处理完成')
 
     def close(self):
         """"""
         self.active = False
 
         if self.push_client:
-            self.push_client.disconnect()
+            # 退出前先进行退订操作，避免下次打开时的订阅异常
+            try:
+                self.push_client.unsubscribe_asset()
+                self.push_client.unsubscribe_position()
+                self.push_client.unsubscribe_order()
+                self.push_client.unsubscribe_quote(
+                    symbols=self.subscribed_symbols)
+                self.push_client.disconnect()
+            except:
+                pass
 
     def process_order(self, data):
         """"""
         for i in data:
-            symbol, exchange = convert_symbol_tiger2vt(str(i.contract))
-            local_id = self.get_new_local_id()
+            try:
+                symbol = contract2symbol(i.contract)
+                symbol, exchange = self.get_vt_symbol_exchange(symbol)
+                local_id = self.get_new_local_id()
 
-            order = OrderData(
-                symbol=symbol,
-                exchange=exchange,
-                orderid=local_id,
-                direction=Direction.NET,
-                price=i.limit_price if i.limit_price else 0.0,
-                volume=i.quantity,
-                traded=i.filled,
-                status=STATUS_TIGER2VT[i.status],
-                time=datetime.fromtimestamp(
-                    i.order_time / 1000).strftime("%H:%M:%S"),
-                gateway_name=self.gateway_name,
-            )
-            self.ID_TIGER2VT[str(i.order_id)] = local_id
-            self.on_order(order)
+                order = OrderData(
+                    symbol=symbol,
+                    exchange=exchange,
+                    orderid=local_id,
+                    direction=DIRECTION_TIGER2VT[i.action],
+                    price=i.limit_price if i.limit_price else 0.0,
+                    volume=i.quantity,
+                    traded=i.filled,
+                    status=STATUS_TIGER2VT[i.status],
+                    time=datetime.fromtimestamp(
+                        i.order_time / 1000).strftime("%H:%M:%S"),
+                    gateway_name=self.gateway_name,
+                )
+                self.ID_TIGER2VT[str(i.id)] = local_id
+                self.on_order(order)
+            except:
+                pass
 
         self.ID_VT2TIGER = {v: k for k, v in self.ID_TIGER2VT.items()}
 
@@ -560,67 +693,136 @@ class TigerGateway(BaseGateway):
         """
         for i in data:
             if i.status == OrderStatus.PARTIALLY_FILLED or i.status == OrderStatus.FILLED:
-                symbol, exchange = convert_symbol_tiger2vt(str(i.contract))
-                self.tradeid += 1
+                try:
+                    symbol = contract2symbol(i.contract)
+                    symbol, exchange = self.get_vt_symbol_exchange(symbol)
+                    self.tradeid += 1
 
-                trade = TradeData(
-                    symbol=symbol,
-                    exchange=exchange,
-                    direction=Direction.NET,
-                    tradeid=self.tradeid,
-                    orderid=self.ID_TIGER2VT[str(i.order_id)],
-                    price=i.avg_fill_price,
-                    volume=i.filled,
-                    time=datetime.fromtimestamp(
-                        i.trade_time / 1000).strftime("%H:%M:%S"),
-                    gateway_name=self.gateway_name,
-                )
+                    trade = TradeData(
+                        symbol=symbol,
+                        exchange=exchange,
+                        direction=DIRECTION_TIGER2VT[i.action],
+                        tradeid=self.tradeid,
+                        orderid=self.ID_TIGER2VT[str(i.id)],
+                        price=i.avg_fill_price,
+                        volume=i.filled,
+                        time=datetime.fromtimestamp(
+                            i.trade_time / 1000).strftime("%H:%M:%S"),
+                        gateway_name=self.gateway_name,
+                    )
 
-                self.on_trade(trade)
+                    self.on_trade(trade)
+                except:
+                    pass
+
+    def get_vt_symbol_exchange(self, symbol):
+        try:
+            exchange = self.vt_tiger_symbol_map.get(symbol)[0]
+        except:
+            self.write_log('can not get symbol %s' % (symbol))
+
+        return symbol, exchange
+
+    def get_trading_contract(self, symbol):
+        """用于下单时获取交易合约
+        :param symbol:
+        :return:
+        """
+        try:
+            return self.vt_tiger_symbol_map.get(symbol)[1]
+        except:
+            self.write_log(
+                'cannot get traidng contract for symbol %s' % (symbol))
 
 
 @functools.lru_cache()
-def convert_symbol_tiger2vt(symbol):
-    """
-    Convert symbol from vt to tiger.
-    """
-    if symbol.encode("UTF-8").isalpha():
-        exchange = Exchange.SMART
+def is_future(symbol):
+    if (len(symbol) < 15 and symbol[:1].isalpha()) and (symbol[-4:].isdigit() or symbol[-4:] == 'main'):
+        return True
     else:
-        if len(symbol) < 6:
-            exchange = Exchange.SEHK
-        elif symbol.startswith("6"):
-            exchange = Exchange.SSE
-        elif symbol.endswith(".SH"):
-            exchange = Exchange.SSE
-            symbol = symbol.strip(".SH")
+        return False
+
+
+@functools.lru_cache()
+def origin_symbol2symbol(origin_symbol):
+    """ 主要用于处理推送接口
+    环球： 'NQ 20190919 20.0' 持仓推送。 'ES 20190920' 订单接口推送
+    标准：没有返回origin_symbol, 订单中只有symbol， 需要SDK处理。
+    :param origin_symbol:
+    :return:
+    """
+    contract = origin_symbol.split(' ')
+    # 股票
+    if len(contract) == 1:
+        return contract[0]
+    # 期货订单推送
+    elif len(contract) == 2:
+        return str(contract[0]) + str(contract[1][2:6])
+    # 期货持仓推送
+    elif len(contract) == 3 and len(contract[1]) == 8:
+        return str(contract[0]) + str(contract[1][2:6])
+    # 期权
+    elif len(contract) == 3 and len(contract[1]) == 0:
+        return origin_symbol
+
+
+@functools.lru_cache()
+def contract2symbol(contract):
+    """用于短链接接口中查询出合约的处理, 将合约对象转换为字符串symbol，
+    'NQ1909'
+    """
+
+    if contract.sec_type == 'STK':
+        symbol = contract.symbol
+
+    elif contract.sec_type == 'FUT':
+        symbol_strs = contract.symbol.split(' ')
+        expiry = contract.expiry
+        # 环球账户的symbol处理NQ 20190919 20.0
+        if len(symbol_strs) == 3:
+            symbol = symbol_strs[0] + str(symbol_strs[1][2:6])
+        # 订单里面 contract 的处理
+        elif expiry:
+            symbol = contract.symbol + str(expiry[2:6])
+        # 标准账户 position 中 symbol 的处理
+        elif not expiry:
+            symbol = contract.symbol
         else:
-            exchange = Exchange.SZSE
-    return symbol, exchange
+            raise ValueError('can not convert contract to symbol')
 
-
-@functools.lru_cache()
-def convert_symbol_vt2tiger(symbol, exchange):
-    """
-    Convert symbol from vt to tiger.
-    """
-    if exchange == Exchange.SSE and symbol.startswith("0"):
-        symbol = symbol + ".SH"
-    else:
-        symbol = symbol
     return symbol
 
 
 @functools.lru_cache()
-def config_symbol_currency(symbol):
-    """
-    Config symbol to corresponding currency
-    """
-    if symbol.encode("UTF-8").isalpha():
-        currency = Currency.USD
-    else:
-        if len(symbol) < 6:
-            currency = Currency.HKD
-        else:
-            currency = Currency.CNH
-    return currency
+def config_future_exchange(exchange):
+    if exchange == 'CFE':
+        exchange = Exchange.CFE
+
+    elif exchange == 'ECBOT':
+        exchange = Exchange.ECBOT
+
+    elif exchange == 'CMECRYPTO':
+        exchange = Exchange.CMECRYPTO
+
+    elif exchange == 'CFE':
+        exchange = Exchange.CFE
+
+    elif exchange == 'GLOBEX':
+        exchange = Exchange.GLOBEX
+
+    elif exchange == 'NYMEX':
+        exchange = Exchange.NYMEX
+
+    elif exchange == 'SGX':
+        exchange = Exchange.SGX
+
+    elif exchange == 'HKFE':
+        exchange = Exchange.HKFE
+
+    elif exchange == 'CBOE':
+        exchange = Exchange.CFE
+
+    elif exchange == 'OSE.JPN':
+        exchange = Exchange.OSE
+
+    return exchange
