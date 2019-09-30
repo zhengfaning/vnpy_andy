@@ -1,32 +1,15 @@
-class TrendData(dict):
 
-    _data = {}
-    _long = False
-    _short = False
+a1 = [2,7,8,9,1, 10,15]
 
-    def __init__(self, *args, **kwargs):
-        super(TrendData, self).__init__(*args, **kwargs)
+a1.sort(reverse=True)
 
-
-    def long_sign(self):
-        self._long = True
-
-    def short_sign(self):
-        self._short = True
-
-    @property
-    def long(self):
-        return self._long
-
-    @property
-    def short(self):
-        return self._short
-
-    @property
-    def data(self):
-        return self._data
+b2 = []
+i = 0
+j = 1
+while j < len(a1):
+    b2.append((a1[i]-a1[j], i, j))
+    i = j
+    j += 1
 
 
-d = TrendData(xx=1, yy=2)
-print(d)
-print('xx' in d)
+print(b2)

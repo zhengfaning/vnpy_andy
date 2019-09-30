@@ -4,13 +4,17 @@ import math
 class AnalyseWave:
     def __init__(self, data):
         self.data = data
+        self.threshold = {"min_range": 0.0005, "large": 0.001, "recent_time": 10}
+        self.wave = self.parse_wave(self.data)
+        self.info = self._statistics(self.wave)
 
     def parse_wave(self, data):
 
         if len(data) <= 0:
             return
             # r = array[::-1]
-        result = {"value": [], "range": [], "pos": [], "length": [], "plus": [], "minus":[], "plus_len": [], "minus_len":[]}
+        # result = {"value": [], "range": [], "pos": [], "length": [], "plus": [], "minus":[], "plus_len": [], "minus_len":[]}
+        result = {"value": [], "range": [], "pos": [], "length": []}
         r = data
         l = len(data) - 1
         now = r[0]
@@ -64,20 +68,46 @@ class AnalyseWave:
             vol += r[pos] - now
             now = r[pos]
             pos += 1
+
+        if end_tag is None:
+            end_tag = l - 1
+            line_len = end_tag - start_pos
+            range_val = round(r[end_tag] / r[start_pos] - 1, 4)
+            # if range_val > 0:
+            #     result["plus"].append(range_val)
+            #     result["plus_len"].append(line_len)
+            # else:
+            #     result["minus"].append(range_val)
+            #     result["minus_len"].append(line_len)
+            result["range"].append(range_val)
+            result["length"].append(line_len)
+            start_pos = end_tag
+            result["value"].append(r[end_tag])
+            result["pos"].append(end_tag)
+
         return pd.DataFrame(result)
 
-    def merge(self, data):
+    def _statistics(self, data):
+        # 大幅度 小幅度 平盘 最近表现
+        # 相差10%内为相等幅度
+        statistics = {"large":[], "recent":{"range":[], "length":[],"minus":[], "plus":[], "sum_range": 0}, "minus":[], "plus":[]}
+        ten_min = statistics["recent"]
+        large = self.threshold["large"]
         candidate = []
-        new_range = []
-        new_length = []
+        min_range = self.threshold["min_range"]
+        result = {"value": [], "range": [], "pos": [], "length": []}
         i = 0
+
+
+
         while i < data.index.size:
-            t1 = data["range"][i]
+            val = data["range"][i]
+
             candidate.append(i)
             sum_candidate = sum(map(lambda _i: data["range"][_i], candidate))
 
             i += 1
-            if abs(sum_candidate) > 0.0005:
+            if abs(sum_candidate) > min_range:
                 j = i + 2
                 while j < data.index.size:
                     j_1 = j - 2
@@ -88,7 +118,7 @@ class AnalyseWave:
                     t2 = data["range"][j_2]
                     t3 = data["range"][j_3]
 
-                    if abs(t1) > 0.0005:
+                    if abs(t1) > min_range:
                         break
 
                     next_r = t1 + t2 + t3
@@ -105,27 +135,62 @@ class AnalyseWave:
                     j += 2
 
                 sum_len = sum(map(lambda _i: data["length"][_i], candidate))
-                new_range.append(sum_candidate)
-
-
-
-
-
-
-        for i in range(data.index.size):
-            item = data["range"][i]
-
-            candidate.append(i)
-            sum_candidate = sum(map(lambda _i: data["range"][_i], candidate))
-
-            if abs(sum_candidate) > 0.0005:
-                # if len(candidate) > 0:
-                result.append(candidate)
+                result["range"].append(sum_candidate)
+                result["length"].append(sum_len)
+                result["value"].append(data["value"][candidate[-1]])
+                result["pos"].append(data["pos"][candidate[-1]])
                 candidate = []
+
+        if len(candidate) > 0:
+            sum_len = sum(map(lambda _i: data["length"][_i], candidate))
+            result["range"].append(sum_candidate)
+            result["length"].append(sum_len)
+            result["value"].append(data["value"][candidate[-1]])
+            result["pos"].append(data["pos"][candidate[-1]])
+
+        result["org_range"] = list(data["range"])
+        count = self.threshold["recent_time"]
+        for i in range(len(result["length"]))[::-1]:
+
+            if count < 0:
+                break
+            l = result["length"][i]
+            r = result["range"][i]
+
+            statistics["recent"]["length"].append(l)
+            statistics["recent"]["range"].append(r)
+            if r > 0:
+                statistics["recent"]["plus"].append(r)
             else:
-                candidate.append(i)
-                result.append(i)
-            continue
+                statistics["recent"]["minus"].append(r)
+            count -= l
+        statistics["recent"]["sum_range"] = sum(statistics["recent"]["range"])
+        for val in result["range"]:
+            if val > 0:
+                statistics["plus"].append(val)
+            else:
+                statistics["minus"].append(val)
+            if abs(val) > large:
+                statistics["large"].append(val)
+        sort_length = list(data["length"])
+        sort_length.sort(reverse=True)
+        result["sort_length"] = sort_length
+        self.statistics = statistics
+        return result
+        # for i in range(data.index.size):
+        #     item = data["range"][i]
+        #
+        #     candidate.append(i)
+        #     sum_candidate = sum(map(lambda _i: data["range"][_i], candidate))
+        #
+        #     if abs(sum_candidate) > 0.0005:
+        #         # if len(candidate) > 0:
+        #         result.append(candidate)
+        #         candidate = []
+        #     else:
+        #         candidate.append(i)
+        #         result.append(i)
+        #     continue
 
 
 

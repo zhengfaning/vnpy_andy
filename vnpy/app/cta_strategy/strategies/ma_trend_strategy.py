@@ -11,6 +11,7 @@ from vnpy.app.cta_strategy import (
 import numpy as np
 from abu.UtilBu.ABuRegUtil import calc_regress_deg
 import abu.UtilBu.ABuRegUtil as reg_util
+from vnpy.app.cta_strategy.strategies.ma_trend.analyse_wave import AnalyseWave
 from vnpy.app.cta_strategy.trader_mgr import PositionStatus, TradeMgr
 from vnpy.trader.utility import IntervalGen
 from vnpy.trader.constant import Direction, Status, OrderType, KlinePattern, KLINE_PATTERN_CHINESE
@@ -475,18 +476,19 @@ class MaTrendStrategy(CtaTemplate):
             ma120 = self.trend_app.info[120]
             ma5 = self.trend_app.info[5][-30:]
                 # y_fit = reg_util.regress_y_polynomial(ma120, zoom=True)
-            close = self.trend_app.info["close"][-30:]
+            close = self.am.close[-30:]
             wave = self.wave(ma5)
-            wave2 = self.parse_wave(close)
+            # wave2 = self.parse_wave(close)
+            # x = AnalyseWave(close)
 
             deg120 = calc_regress_deg(ma120[-5:], False)
             if deg < 0:
-                calc_data["trade_open"] = "开空,deg={},wave={}".format(deg, wave["range"])
+                calc_data["trade_open"] = "开空,deg={}".format(deg)
                 sign()
                 ratio =0.2 if deg120 < 0 else 0.1
                 return self.trade_mgr.short(bar.close_price, 0.1, {})
             elif deg > 0:
-                calc_data["trade_open"] = "开多,deg={},wave={}".format(deg, wave["range"])
+                calc_data["trade_open"] = "开多,deg={}".format(deg)
                 sign()
                 ratio = 0.2 if deg120 > 0 else 0.1
                 return self.trade_mgr.buy(bar.close_price, 0.1, {})
@@ -716,10 +718,14 @@ class MaTrendStrategy(CtaTemplate):
                 range_sum=np.sum(am.range[-5:]), 
                 pattern=list(map(lambda x: KLINE_PATTERN_CHINESE[x], self.pattern_record.keys())),
                 atr_mean=np.mean(am.atr(20, array=True,length=240)[-200:]),
-                kdj_record=self.kdj_record[-10:],
-
                 ))
-
+        if self.trend_app.info.index.size >= 31:
+            ma5 = self.trend_app.info[5][-31:]
+            x = AnalyseWave(ma5)
+            calc_data["ma5_info"] = x.info
+            ma10 = self.trend_app.info[10][-31:]
+            x = AnalyseWave(ma10)
+            calc_data["ma10_info"] = x.info
         return calc_data
 
     def on_strategy(self, am:ArrayManager, bar: BarData, strategy_list, close_strategy_list, calc_data=None):
@@ -952,6 +958,14 @@ class MaTrendStrategy(CtaTemplate):
             vol += r[pos] - now
             now = r[pos]
             pos += 1
+
+        if end_tag is None:
+            end_tag = l - 1
+            result["range"].append(r[end_tag] / r[start_pos] - 1)
+            result["length"].append(end_tag - start_pos)
+            start_pos = end_tag
+            result["value"].append(r[end_tag])
+            result["pos"].append(end_tag)
         return pd.DataFrame(result)
     # def ma_trend_strategy_xx(self, am:ArrayManager, bar:BarData, calc_data, setting={"len":40, "atr":40, "atr_valve":0.09, "mid_sign":(10,30)}):
 

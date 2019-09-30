@@ -494,7 +494,7 @@ if __name__ == "__main__":
     strategy_test = BacktesterApp()
     start_date = datetime.datetime(2019,8,2,20)
     # end_date = datetime.datetime.now()
-    end_date = datetime.datetime(2019,8,16,20)
+    end_date = datetime.datetime(2019,8,20,20)
     stock_ls = ["fb.SMART","amd.SMART", "tsla.SMART", "msft.SMART", "aapl.SMART", "pdd.SMART", "amzn.SMART", "baba.SMART"]
     stock = stock_ls[0]
     algo_setting= {
@@ -520,7 +520,7 @@ if __name__ == "__main__":
     # strategy_test.init_plot()
     strategy_test.statistics()
     strategy_test.plot_kline()
-    ma_line = [10, 20, 30, 60, 120]
+    ma_line = [5, 10, 20, 30, 60, 120]
     # ma_line = [5, 10, 30, 60, 120]
     strategy_test.plot_ma_line(ma_line)
     strategy_test.show()
