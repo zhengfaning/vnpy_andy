@@ -1,0 +1,63 @@
+import datetime
+
+from vnpy.app.cta_strategy.strategies.ma_trend.analyse_wave import AnalyseWave
+from vnpy.app.cta_strategy.strategies.ma_trend.constant import DataMethod
+from vnpy.app.cta_strategy.strategies.ma_trend.data_center import DataCreator
+from vnpy.app.cta_strategy.strategies.ma_trend.time_manager import ClockManager
+from vnpy.trader.utility import ArrayManager
+
+
+class TodayWave(DataCreator):
+
+
+    # def __init__(self, am: ArrayManager, ma_level, event_groups=None):
+    #     self.am = am
+    #     self.ma_level = ma_level
+    #     self.event_groups = event_groups
+    def tag(self):
+        return "today_wave"
+
+    def init(self):
+        am:ArrayManager = self.data_center.component["array_manager_1"]
+        if am is None:
+            raise AttributeError("缺少组件array_manager_1")
+        clock:ClockManager = self.data_center.component["clock"]
+        if clock is None:
+            raise AttributeError("缺少组件clock")
+        self.am = am
+        self.clock = clock
+        self.data_center.add_method(DataMethod.TodayWave, self.create_wave)
+
+
+
+    def create_wave(self, parameters):
+        lvl = parameters["lvl"]
+        dt = self.am.time[-1]
+        rt = self.clock.get_run_time(dt)
+        rt_min = rt.total_seconds() / 60
+
+        length = int(rt_min)
+        trend_info = self.data_center.invoke(DataMethod.MaInfoData, {"lvl":lvl})
+        if trend_info.index.size < length:
+            return
+
+        ma_data = trend_info[5][-length:]
+        self.today_wave = AnalyseWave(ma_data)
+
+        return self.today_wave
+
+    def on_time_check(self, scale, run_time):
+        if self.trend_info is None:
+            return
+
+        if scale <= 0:
+            self.today_wave = None
+            return
+
+        length = int(run_time)
+        if self.trend_info.index.size < length:
+            return
+
+        ma10 = self.trend_info[10][-length:]
+        self.today_wave = AnalyseWave(ma10)
+        self.push(self.today_wave)

@@ -92,7 +92,7 @@ class BacktesterApp:
         self.algo_engine.init_engine()
         self.close = None
     
-    def init_plot(self, aspect_scale=0.3, match_aspect=False,width=1100, height=450, TOOLTIPS=None):
+    def init_plot(self, aspect_scale=0.3, match_aspect=False,width=1150, height=600, TOOLTIPS=None):
         # tools="pan,tap,crosshair,reset,save,wheel_zoom,xwheel_zoom,ywheel_zoom"
         self.plot = figure(aspect_scale=aspect_scale, output_backend="webgl", match_aspect=match_aspect,plot_width=width, plot_height=height,x_axis_label="date", y_axis_label="high", tooltips=TOOLTIPS, tools=g_tools)
         
@@ -159,7 +159,7 @@ class BacktesterApp:
         self.low = []
         for i,v in enumerate(bar_data):
             bar:BarData = v
-            t = local_to_eastern(bar.datetime.timestamp())
+            t = bar.datetime
             self.date[i] = t.strftime("%m/%d %H:%M")
             self.date_index[bar.datetime] = i
             self.close.append(bar.close_price)
@@ -220,7 +220,7 @@ class BacktesterApp:
             desc = str(nitem)
             tooltip_desc.append(desc)
             deg_desc.append("{:.2f}  {:.2f}  {:.2f}".format(item["deg40_20"], item["deg20_0"], item["deg_f"]))
-            t = local_to_eastern(item["time"].timestamp())
+            t = item["time"]
             dt.append(t.strftime("%m/%d %H:%M:%S"))
             c = palettes_colors[0]
             if "trade_open" in item:
@@ -293,7 +293,7 @@ class BacktesterApp:
             desc = str(nitem)
             tooltip_desc.append(desc)
             deg_desc.append("{:.2f}  {:.2f}  {:.2f}".format(item["deg40_20"], item["deg20_0"], item["deg_f"]))
-            t = local_to_eastern(item["time"].timestamp())
+            t = item["time"].timestamp()
             dt.append(t.strftime("%m/%d %H:%M:%S"))
             c = palettes_colors[0]
             if "trade" in item:
@@ -432,7 +432,7 @@ class BacktesterApp:
         if result_df is not None:
             for trade_list in result_df.trades:
                 for item in trade_list:
-                    time = item.datetime
+                    time = local_to_eastern(item.datetime.timestamp())
                     p = None
                     if time in self.date_index:
                         p = self.date_index[time]
@@ -493,8 +493,9 @@ if __name__ == "__main__":
 
     strategy_test = BacktesterApp()
     start_date = datetime.datetime(2019,8,2,20)
+    end_date = datetime.datetime(2019,8,15,20)
     # end_date = datetime.datetime.now()
-    end_date = datetime.datetime(2019,8,20,20)
+
     stock_ls = ["fb.SMART","amd.SMART", "tsla.SMART", "msft.SMART", "aapl.SMART", "pdd.SMART", "amzn.SMART", "baba.SMART"]
     stock = stock_ls[0]
     algo_setting= {
@@ -516,8 +517,8 @@ if __name__ == "__main__":
     # calc_regress_deg(close)
     width=1800
     height=600
-    strategy_test.init_plot(width=width, height=height)
-    # strategy_test.init_plot()
+    # strategy_test.init_plot(width=width, height=height)
+    strategy_test.init_plot()
     strategy_test.statistics()
     strategy_test.plot_kline()
     ma_line = [5, 10, 20, 30, 60, 120]

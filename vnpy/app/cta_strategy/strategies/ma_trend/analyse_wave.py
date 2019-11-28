@@ -6,7 +6,8 @@ class AnalyseWave:
         self.data = data
         self.threshold = {"min_range": 0.0005, "large": 0.001, "recent_time": 10}
         self.wave = self.parse_wave(self.data)
-        self.info = self._statistics(self.wave)
+        pd_wave = pd.DataFrame(self.wave)
+        self.optimize, self.statistics = self.optimize_wave(pd_wave)
 
     def parse_wave(self, data):
 
@@ -14,7 +15,7 @@ class AnalyseWave:
             return
             # r = array[::-1]
         # result = {"value": [], "range": [], "pos": [], "length": [], "plus": [], "minus":[], "plus_len": [], "minus_len":[]}
-        result = {"value": [], "range": [], "pos": [], "length": []}
+        result = {"value": [], "range": [], "pos": [], "length": [], "time":[]}
         r = data
         l = len(data) - 1
         now = r[0]
@@ -52,17 +53,12 @@ class AnalyseWave:
             if end_tag is not None:
                 line_len = end_tag - start_pos
                 range_val = round(r[end_tag] / r[start_pos] - 1, 4)
-                # if range_val > 0:
-                #     result["plus"].append(range_val)
-                #     result["plus_len"].append(line_len)
-                # else:
-                #     result["minus"].append(range_val)
-                #     result["minus_len"].append(line_len)
                 result["range"].append(range_val)
                 result["length"].append(line_len)
-                start_pos = end_tag
                 result["value"].append(r[end_tag])
                 result["pos"].append(end_tag)
+                result["time"].append(r.index[end_tag])
+                start_pos = end_tag
                 end_tag = None
 
             vol += r[pos] - now
@@ -73,21 +69,16 @@ class AnalyseWave:
             end_tag = l - 1
             line_len = end_tag - start_pos
             range_val = round(r[end_tag] / r[start_pos] - 1, 4)
-            # if range_val > 0:
-            #     result["plus"].append(range_val)
-            #     result["plus_len"].append(line_len)
-            # else:
-            #     result["minus"].append(range_val)
-            #     result["minus_len"].append(line_len)
             result["range"].append(range_val)
             result["length"].append(line_len)
-            start_pos = end_tag
             result["value"].append(r[end_tag])
             result["pos"].append(end_tag)
+            result["time"].append(r.index[end_tag])
+            start_pos = end_tag
 
-        return pd.DataFrame(result)
+        return result
 
-    def _statistics(self, data):
+    def optimize_wave(self, data):
         # 大幅度 小幅度 平盘 最近表现
         # 相差10%内为相等幅度
         statistics = {"large":[], "recent":{"range":[], "length":[],"minus":[], "plus":[], "sum_range": 0}, "minus":[], "plus":[]}
@@ -148,7 +139,6 @@ class AnalyseWave:
             result["value"].append(data["value"][candidate[-1]])
             result["pos"].append(data["pos"][candidate[-1]])
 
-        result["org_range"] = list(data["range"])
         count = self.threshold["recent_time"]
         for i in range(len(result["length"]))[::-1]:
 
@@ -175,8 +165,8 @@ class AnalyseWave:
         sort_length = list(data["length"])
         sort_length.sort(reverse=True)
         result["sort_length"] = sort_length
-        self.statistics = statistics
-        return result
+
+        return result, statistics
         # for i in range(data.index.size):
         #     item = data["range"][i]
         #

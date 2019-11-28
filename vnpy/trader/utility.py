@@ -1,7 +1,7 @@
 """
 General utility functions.
 """
-
+import datetime
 import json
 from pathlib import Path
 from typing import Callable
@@ -157,7 +157,8 @@ class BarGenerator:
         on_bar: Callable,
         window: int = 0,
         on_window_bar: Callable = None,
-        interval: Interval = Interval.MINUTE
+        interval: Interval = Interval.MINUTE,
+        tz_info = None
     ):
         """Constructor"""
         self.bar = None
@@ -172,6 +173,13 @@ class BarGenerator:
 
         self.last_tick = None
         self.last_bar = None
+        self.tz_info = tz_info
+
+    def local_to_timezone(self, dt:datetime.datetime):
+        if self.tz_info is None:
+            return dt
+        else:
+            return datetime.datetime.fromtimestamp(dt.timestamp(), self.tz_info)
 
     def update_tick(self, tick: TickData):
         """
@@ -189,6 +197,7 @@ class BarGenerator:
             self.bar.datetime = self.bar.datetime.replace(
                 second=0, microsecond=0
             )
+            self.bar.datetime = self.local_to_timezone(self.bar.datetime)
             self.on_bar(self.bar)
 
             new_minute = True
@@ -230,7 +239,7 @@ class BarGenerator:
                 dt = bar.datetime.replace(second=0, microsecond=0)
             else:
                 dt = bar.datetime.replace(minute=0, second=0, microsecond=0)
-
+            dt = self.local_to_timezone(dt)
             self.window_bar = BarData(
                 symbol=bar.symbol,
                 exchange=bar.exchange,
@@ -286,6 +295,7 @@ class BarGenerator:
         self.bar.datetime = self.bar.datetime.replace(
             second=0, microsecond=0
         )
+        self.bar.datetime = self.local_to_timezone(self.bar.datetime)
         self.on_bar(self.bar)
         self.bar = None
 
@@ -409,6 +419,12 @@ class ArrayManager(object):
         else:
             self.range_array[-1] = 0
 
+    @property
+    def time(self):
+        """
+        Get open price time series.
+        """
+        return self.time_array
 
     @property
     def open(self):
