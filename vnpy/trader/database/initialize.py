@@ -4,11 +4,19 @@ from .database import BaseDatabaseManager, Driver
 
 def init(settings: dict) -> BaseDatabaseManager:
     driver = Driver(settings["driver"])
-    if driver is Driver.MONGODB:
+    if driver is Driver.BCOLZ:
+        return init_bcolz(driver=driver, settings=settings)
+    elif driver is Driver.MONGODB:
         return init_nosql(driver=driver, settings=settings)
     else:
         return init_sql(driver=driver, settings=settings)
 
+def init_bcolz(driver: Driver, settings: dict):
+    from .database_bcolz import init
+    keys = {'database', "host", "port", "user", "password"}
+    settings = {k: v for k, v in settings.items() if k in keys}
+    _database_manager = init(driver, settings)
+    return _database_manager
 
 def init_sql(driver: Driver, settings: dict):
     from .database_sql import init

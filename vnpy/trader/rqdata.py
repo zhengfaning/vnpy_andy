@@ -13,7 +13,8 @@ from .setting import SETTINGS
 from .constant import Exchange, Interval
 from .object import BarData, HistoryRequest
 import pandas as pd
-
+from pandas_market_calendars import get_calendar
+from vnpy.trader.constant import Exchange, Interval, EXCHANGE_CALENDAR
 
 INTERVAL_VT2RQ = {
     Interval.MINUTE: BarPeriod.ONE_MINUTE,
@@ -238,45 +239,78 @@ class RqdataClient:
         end += adjustment
         final = end.timestamp()
         
-        # 获取总时间间隔
-        # interval_total = end - start
-        # unix_start = start.timestamp() * 1000
-        # unix_end = end.timestamp() * 1000
-        bars_start = start.timestamp()
-        bars_end = bars_start + timedelta(3).total_seconds()
-        bars_end = bars_end if bars_end < final else final
+        calendar_name = EXCHANGE_CALENDAR[exchange]
+        calendar = get_calendar(calendar_name)
+        schedule = calendar.schedule(start, end)
+
         df = None
-        while bars_start < final:
+        for _,s in schedule.iterrows():
             df_data = self.openapi_client.get_bars([symbol], 
-                                              period=rq_interval, 
-                                              limit=5000, 
-                                              begin_time=bars_start * 1000, 
-                                              end_time=bars_end * 1000)
-            print("query_history:symbol={0},从{1}到{2},一共获取到{3}条数据".format(
-                symbol,
-                datetime.fromtimestamp(bars_start),
-                datetime.fromtimestamp(bars_end),
-                df_data.__len__()))
-            bars_start = bars_end + adjustment.total_seconds()
-            bars_end = bars_end + timedelta(3).total_seconds()
-            bars_end = bars_end if bars_end < final else final
-            if df_data.empty:
-                continue
-    
+                                    period=rq_interval, 
+                                    limit=5000, 
+                                    begin_time=s.market_open.to_pydatetime().timestamp() * 1000, 
+                                    end_time=s.market_close.to_pydatetime().timestamp() * 1000)
+            if df_data.__len__() > 0:
+                print("query_history:symbol={0},从{1}到{2},一共获取到{3}条数据".format(
+                    symbol,
+                    datetime.fromtimestamp(df_data['time'].iloc[0]/1000),
+                    datetime.fromtimestamp(df_data['time'].iloc[-1]/1000),
+                    df_data.__len__()))
             if df is None:
                 df = df_data
             else:
                 df = pd.concat([df, df_data])
-            print(df)
-        
-        if df is None:
-            return []
 
-        print("query_history:symbol={0},从{1}到{2},一共获取到{3}条数据".format(
-            symbol,
-            datetime.fromtimestamp(int(df.time.values[0])/1000),
-            datetime.fromtimestamp(int(df.time.values[-1])/1000),
-            df.__len__()))
+            if df is None:
+                return []
+            if df.__len__() > 0:
+                print("query_history:symbol={0},从{1}到{2},一共获取到{3}条数据".format(
+                    symbol,
+                    datetime.fromtimestamp(df['time'].iloc[0]/1000),
+                    datetime.fromtimestamp(df['time'].iloc[-1]/1000),
+                    df.__len__()))
+
+
+        # 获取总时间间隔
+        # interval_total = end - start
+        # unix_start = start.timestamp() * 1000
+        # unix_end = end.timestamp() * 1000
+        # bars_start = start.timestamp()
+        # bars_end = bars_start + timedelta(3).total_seconds()
+        # bars_end = bars_end if bars_end < final else final
+        # df = None
+        # while bars_start < final:
+        #     df_data = self.openapi_client.get_bars([symbol], 
+        #                                       period=rq_interval, 
+        #                                       limit=5000, 
+        #                                       begin_time=bars_start * 1000, 
+        #                                       end_time=bars_end * 1000)
+        #     if df_data.__len__() > 0:
+        #         print("query_history:symbol={0},从{1}到{2},一共获取到{3}条数据".format(
+        #             symbol,
+        #             datetime.fromtimestamp(df_data['time'].iloc[0]/1000),
+        #             datetime.fromtimestamp(df_data['time'].iloc[-1]/1000),
+        #             df_data.__len__()))
+        #     bars_start = bars_end
+        #     bars_end = bars_end + timedelta(3).total_seconds()
+        #     bars_end = bars_end if bars_end < final else final
+        #     if df_data.empty:
+        #         continue
+    
+        #     if df is None:
+        #         df = df_data
+        #     else:
+        #         df = pd.concat([df, df_data])
+        #     print(df)
+        
+        # if df is None:
+        #     return []
+        # if df.__len__() > 0:
+        #     print("query_history:symbol={0},从{1}到{2},一共获取到{3}条数据".format(
+        #         symbol,
+        #         datetime.fromtimestamp(df['time'].iloc[0]/1000),
+        #         datetime.fromtimestamp(df['time'].iloc[-1]/1000),
+        #         df.__len__()))
 
         # df = rqdata_get_price(
         #     rq_symbol,

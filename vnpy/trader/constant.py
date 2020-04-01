@@ -118,6 +118,10 @@ class Exchange(Enum):
     BITFINEX = "BITFINEX"
     BINANCE = "BINANCE"
 
+EXCHANGE_CALENDAR = {
+    Exchange.SMART: "NYSE",
+}
+
 
 class Currency(Enum):
     """

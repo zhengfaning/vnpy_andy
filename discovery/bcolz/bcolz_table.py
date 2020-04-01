@@ -1,19 +1,22 @@
-from __future__ import print_function
-
-# Let's import the packages we need for this tutorial
 from bcolz import ctable
 from toolz import keymap, valmap
+from textwrap import dedent
 import numpy as np
 import sys
 import os
 import json
 import pandas as pd
 from enum import Enum
-from trading_calendars import get_calendar
+from pandas_market_calendars import get_calendar
+
 US_EQUITIES_MINUTES_PER_DAY = 390
 FUTURES_MINUTES_PER_DAY = 1440
-
+OHLC_RATIO = 1000
 DEFAULT_EXPECTEDLEN = US_EQUITIES_MINUTES_PER_DAY * 252 * 15
+
+
+class BcolzMinuteOverlappingData(Exception):
+    pass
 
 # Timing measurements will be saved here
 # bcolz_vs_numpy = {}
@@ -24,9 +27,27 @@ DEFAULT_EXPECTEDLEN = US_EQUITIES_MINUTES_PER_DAY * 252 * 15
 # # c = bcolz.carray(a, rootdir='mydir')
 # # c.flush()
 # d = bcolz.arange(10, rootdir='mydir', mode='w')
-class ExchangeToCalendarLangure(Enum):
-    SMART = 'XNYS'
+class ExchangeAlias(Enum):
+    SMART = 'NYSE'
 
+def _calc_minute_index(market_opens, minutes_per_day):
+    minutes = np.zeros(len(market_opens) * minutes_per_day,
+                       dtype='datetime64[ns]')
+    deltas = np.arange(0, minutes_per_day, dtype='timedelta64[m]')
+    for i, market_open in enumerate(market_opens):
+        start = market_open.asm8
+        minute_values = start + deltas
+        start_ix = minutes_per_day * i
+        end_ix = start_ix + minutes_per_day
+        minutes[start_ix:end_ix] = minute_values
+    return pd.to_datetime(minutes, utc=True, box=True)
+
+
+
+'''元数据
+    ohlc_ratio:比例
+    calendar: 交易日历对象 pandas_market_calendars
+'''
 class BcolzMinuteBarMetadata(object):
     """
     Parameters
@@ -119,6 +140,7 @@ class BcolzMinuteBarMetadata(object):
         self.calendar = calendar
         self.start_session = start_session
         self.end_session = end_session
+    
         self.default_ohlc_ratio = default_ohlc_ratio
         # self.ohlc_ratios_per_sid = ohlc_ratios_per_sid
         self.minutes_per_day = minutes_per_day
@@ -197,9 +219,40 @@ class BcolzMinuteBarMetadata(object):
 
 class BcolzTable:
 
-    def __init__(self):
-        self._rootdir = os.path.abspath(os.path.dirname(__file__))
-        self._expectedlen = DEFAULT_EXPECTEDLEN
+    def __init__(self,
+                    rootdir,
+                    calendar,
+                    start_session,
+                    end_session,
+                    minutes_per_day,
+                    default_ohlc_ratio=OHLC_RATIO,
+                    expectedlen=DEFAULT_EXPECTEDLEN,
+                    write_metadata=True):
+
+            self._rootdir = rootdir
+            self._start_session = start_session
+            self._end_session = end_session
+            self._calendar = calendar
+            slicer = (
+                calendar.schedule.index.slice_indexer(start_session, end_session))
+            self._schedule = calendar.schedule[slicer]
+            self._session_labels = self._schedule.index
+            self._minutes_per_day = minutes_per_day
+            self._expectedlen = expectedlen
+            self._default_ohlc_ratio = default_ohlc_ratio
+
+            self._minute_index = _calc_minute_index(
+                self._schedule.market_open, self._minutes_per_day)
+
+            if write_metadata:
+                metadata = BcolzMinuteBarMetadata(
+                    self._default_ohlc_ratio,
+                    self._calendar,
+                    self._start_session,
+                    self._end_session,
+                    self._minutes_per_day,
+                )
+                metadata.write(self._rootdir)
     
     def symbol_path(self, symbol, exchange):
         """
@@ -293,7 +346,7 @@ class BcolzTable:
             return pd.NaT
         return self._session_labels[num_days - 1]
 
-    def _write_cols(self, sid, dts, cols, invalid_data_behavior):
+    def _write_cols(self, dts, cols, invalid_data_behavior):
         """
         Internal method for `write_cols` and `write`.
 
@@ -358,7 +411,7 @@ class BcolzTable:
         dt_ixs = np.searchsorted(all_minutes_in_window.values,
                                  dts.astype('datetime64[ns]'))
 
-        ohlc_ratio = self.ohlc_ratio_for_sid(sid)
+        ohlc_ratio = OHLC_RATIO
 
         (
             open_col[dt_ixs],

@@ -179,7 +179,7 @@ class BacktesterApp:
     
     def plot_wave(self):
         w,w_pos = Algorithm.wave(self.close, self.wave_window)
-        self.plot.circle(x=w_pos, y=w, color=colors.named.black, legend="all wave")
+        self.plot.circle(x=w_pos, y=w, color=colors.named.black, legend_label="all wave")
 
     def statistics(self):
         result_df = self.backtester_engine.get_result_df()
@@ -270,7 +270,7 @@ class BacktesterApp:
         hover = HoverTool(tooltips=TOOLTIPS)
         self.plot.add_tools(hover)
         # self.plot.tooltips = TOOLTIPS
-        self.plot.circle("x", "y", color='color', size=7, source=source, legend="point desc")
+        self.plot.circle("x", "y", color='color', size=7, source=source, legend_label="point desc")
 
     def plot_bar_tag(self):
         tooltip_x = []
@@ -345,14 +345,14 @@ class BacktesterApp:
         hover = HoverTool(tooltips=TOOLTIPS)
         self.plot.add_tools(hover)
         # self.plot.tooltips = TOOLTIPS
-        self.plot.circle("x", "y", color='color', size=7, source=source, legend="bar tag")
+        self.plot.circle("x", "y", color='color', size=7, source=source, legend_label="bar tag")
 
     def plot_ma_line(self, ma_param_list = [5, 10, 30, 60, 120]):
         c_i = 5
         close = np.array(self.close)
         for i in ma_param_list:
             ma_val = talib.SMA(close, timeperiod = i)
-            self.plot.line(x=self.plot_index, y=ma_val, color=palettes_colors[c_i], legend="ma"+str(i))
+            self.plot.line(x=self.plot_index, y=ma_val, color=palettes_colors[c_i], legend_label="ma"+str(i))
             c_i += 1
 
     def plot_kdj(self, ma_param_list = [5, 10, 30, 60, 120]):
@@ -361,15 +361,15 @@ class BacktesterApp:
         high = np.array(self.high)
         low = np.array(self.low)
         kdj_val = Algorithm.kdj(high, low, close)
-        self.plot_second.line(x=self.plot_index, y=kdj_val["k"], color=palettes_colors[0], legend="kdj")
-        self.plot_second.line(x=self.plot_index, y=kdj_val["d"], color=palettes_colors[2], legend="kdj")
-        self.plot_second.line(x=self.plot_index, y=kdj_val["j"], color=palettes_colors[3], legend="kdj")
+        self.plot_second.line(x=self.plot_index, y=kdj_val["k"], color=palettes_colors[0], legend_label="kdj")
+        self.plot_second.line(x=self.plot_index, y=kdj_val["d"], color=palettes_colors[2], legend_label="kdj")
+        self.plot_second.line(x=self.plot_index, y=kdj_val["j"], color=palettes_colors[3], legend_label="kdj")
             
 
             
 
     def plot_kline(self):
-        self.plot.line(x = self.plot_index, y = self.close, color=palettes_colors[0], line_width=1.5, legend="kline")
+        self.plot.line(x = self.plot_index, y = self.close, color=palettes_colors[0], line_width=1.5, legend_label="kline")
 
     def plot_trade_wave(self):
         dt_w = []
@@ -381,7 +381,7 @@ class BacktesterApp:
                 # v = close[index]
                 dt_w.append(index)
                 data_w.append(i_v[1])
-        self.plot.circle(x=dt_w, y=data_w, color=colors.named.black, legend="trade_info")
+        self.plot.circle(x=dt_w, y=data_w, color=colors.named.black, legend_label="trade_info")
 
     def plot_trade_degline(self):
         # bar_data = self.get_bar_data()
@@ -422,8 +422,8 @@ class BacktesterApp:
 
         # hover = HoverTool(tooltips=TOOLTIPS)
         # self.plot.add_tools(hover)
-        self.plot.multi_line("xs", "ys", color=colors.named.yellowgreen, source=source, legend="degline")
-        self.plot.multi_line(xs=dt_index_full, ys=y_fit_full, color=colors.named.goldenrod, legend="degline_full")
+        self.plot.multi_line("xs", "ys", color=colors.named.yellowgreen, source=source, legend_label="degline")
+        self.plot.multi_line(xs=dt_index_full, ys=y_fit_full, color=colors.named.goldenrod, legend_label="degline_full")
         
 
     def plot_tarde_mark(self):
@@ -492,8 +492,8 @@ class BacktesterApp:
 if __name__ == "__main__":
 
     strategy_test = BacktesterApp()
-    start_date = datetime.datetime(2019,8,2,20)
-    end_date = datetime.datetime(2019,8,15,20)
+    start_date = datetime.datetime(2019,11,10,20)
+    end_date = datetime.datetime(2019,12,6,20)
     # end_date = datetime.datetime.now()
 
     stock_ls = ["fb.SMART","amd.SMART", "tsla.SMART", "msft.SMART", "aapl.SMART", "pdd.SMART", "amzn.SMART", "baba.SMART"]
@@ -507,7 +507,7 @@ if __name__ == "__main__":
     }
     algo_setting["template_name"] = "ArbitrageAlgo"
     # strategy_test.start_algo(algo_setting)
-    # strategy_test.download(stock, start_date, end_date)
+    strategy_test.download(stock, start_date, end_date)
     strategy_list = ["MaLevelTrackStrategy", "PatternScoreStrategy", "BollChannelStrategy", "ReverseCatchStrategy", "MaTrendStrategy"]
     l = datetime.datetime.now()
     strategy_test.start_backtester(strategy_list[4], stock, start_date, end_date)
@@ -515,8 +515,8 @@ if __name__ == "__main__":
     # close = strategy_test.close
     # close = np.array(close)
     # calc_regress_deg(close)
-    width=1800
-    height=600
+    # width=1800
+    # height=600
     # strategy_test.init_plot(width=width, height=height)
     strategy_test.init_plot()
     strategy_test.statistics()

@@ -9,10 +9,12 @@ if TYPE_CHECKING:
 
 
 class Driver(Enum):
+    BCOLZ = "bcolz"
     SQLITE = "sqlite"
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
     MONGODB = "mongodb"
+    
 
 
 class BaseDatabaseManager(ABC):

@@ -1,3 +1,4 @@
+Cython
 PyQt5
 pyqtgraph
 dataclasses; python_version<="3.6"
@@ -9,7 +10,7 @@ pymysql
 psycopg2
 mongoengine
 numpy
-pandas==0.24
+pandas==0.24.2
 matplotlib
 seaborn
 futu-api
@@ -19,3 +20,16 @@ ta-lib
 ibapi
 deap
 pyzmq
+sklearn
+statsmodels
+bokeh
+bcolz==0.12.1
+# On disk storage format for pricing data.
+h5py==2.7.1
+# Command line interface helper
+click==4.0.0
+# FUNctional programming utilities
+toolz==0.8.2
+intervaltree==2.1.0
+lru-dict==1.1.4
+tables==3.4.3
